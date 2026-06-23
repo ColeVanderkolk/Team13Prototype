@@ -1,0 +1,41 @@
+{
+  "name": "find-your-way-server",
+  "version": "1.0.0",
+  "description": "Colyseus multiplayer game server for ",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "start": "node --import tsx index.ts",
+    "dev": "tsx watch index.ts"
+  },
+  "keywords": [
+    "colyseus",
+    "multiplayer",
+    "game",
+    "websocket"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@colyseus/core": "^0.16.24",
+    "@colyseus/monitor": "^0.16.7",
+    "@colyseus/schema": "^3.0.75",
+    "colyseus": "^0.16.5",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "livekit-server-sdk": "^2.15.0",
+    "tsx": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.16.5",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
