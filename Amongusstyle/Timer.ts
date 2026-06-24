@@ -14,7 +14,7 @@ export class Timer {
         this.display = document.createElement('div')
         this.display.style.cssText = `
             position: fixed;
-            top: 20px;
+            bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
             color: white;
