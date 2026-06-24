@@ -205,7 +205,9 @@ box(0.28, 0.4, 0.32, M.dark, 0, -0.2, 0, lLegPiv);
 box(0.28, 0.4, 0.32, M.dark, 0, -0.2, 0, rLegPiv);
 
 // ─── Timer & Collectibles ───────────────────────────────────────────────────
+let gameOver = false;
 const timer = new Timer(30 * 60, () => {
+    gameOver = true;
     const overlay = document.createElement('div');
     overlay.style.cssText = `
         position: fixed;
@@ -263,6 +265,7 @@ window.addEventListener('resize', () => {
 
 // ─── Update ────────────────────────────────────────────────────────────────
 function update(dt: number): void {
+  if (gameOver) return;
   const sprinting = keys['ShiftLeft'] || keys['ShiftRight'];
   const speed = sprinting ? SPRINT_SPEED : WALK_SPEED;
 
