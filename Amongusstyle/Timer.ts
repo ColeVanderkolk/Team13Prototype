@@ -1,9 +1,10 @@
 export class Timer {
+    //tracks the remaining time and displays it on the screen
     private remainingSeconds: number
-    private running: boolean
-    private lastTime: number
-    private onExpire: () => void
-    private display: HTMLDivElement
+    private running: boolean // true if the timer is currently counting down
+    private lastTime: number // timestamp of the last update, used to calculate delta time
+    private onExpire: () => void // callback function to call when the timer reaches zero
+    private display: HTMLDivElement 
 
     constructor(durationSeconds: number, onExpire: () => void) {
         this.remainingSeconds = durationSeconds
@@ -28,12 +29,13 @@ export class Timer {
         document.body.appendChild(this.display)
         this.updateDisplay()
     }
-
+    
+    // call this to start the timer
     start(): void {
         this.running = true
         this.lastTime = performance.now() // performance.now() gives us a precise timestamp in milliseconds
     }
-
+    // call this every frame in game loop to update the timer
     update(): void {
         if (!this.running) return
 
@@ -55,6 +57,8 @@ export class Timer {
         this.updateDisplay()
     }
 
+    //formats time and updates the display on the screen
+    //timer turns red when under 5 minutes
     private updateDisplay(): void {
         // split total seconds into minutes and leftover seconds
         const mins = Math.floor(this.remainingSeconds / 60)

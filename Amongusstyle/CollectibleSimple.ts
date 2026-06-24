@@ -1,9 +1,14 @@
 import * as THREE from 'three'
 
 export class CollectibleSimple {
+
+    //container that holds the collectible and handles spin and float
     private spinGroup: THREE.Group
+    // Y position to calculate float
     private spawnY: number
+    //tracks how long the collectible has been floating, used to calculate float
     private floatTime: number
+    //whether this collectible has been collected or not
     isCollected: boolean
 
     constructor(x: number, y: number, z: number) {
@@ -27,14 +32,17 @@ export class CollectibleSimple {
         this.spinGroup.add(glow)
     }
 
+    //call this to add the collectible to the scene
     addToScene(scene: THREE.Scene): void {
         scene.add(this.spinGroup)
     }
 
+    //proximity check for the player to see if they are close enough to collect this item
     getObject(): THREE.Object3D {
         return this.spinGroup
     }
 
+    //call this every frame to animate floating and spinning
     update(deltaTime: number): void {
         if (this.isCollected) return
 
@@ -43,15 +51,10 @@ export class CollectibleSimple {
         this.spinGroup.rotation.y += deltaTime * 1.5
     }
 
+    //call this when player collects the item to remove it from the scene and mark it as collected
     collect(scene: THREE.Scene): void {
         if (this.isCollected) return
         this.isCollected = true
         scene.remove(this.spinGroup)
-    }
-
-    respawn(scene: THREE.Scene): void {
-        this.isCollected = false
-        this.floatTime = 0
-        scene.add(this.spinGroup)
     }
 }
