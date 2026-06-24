@@ -226,6 +226,7 @@ const timer = new Timer(30 * 60, () => {
 });
 timer.start();
 
+// current coordinates for collectible spawn points (x, y, z) in world space
 const score = new Score();
 const collectibles = [
   new CollectibleSimple(-18, 1, -10),
@@ -324,7 +325,7 @@ function update(dt: number): void {
       const dx = charRoot.position.x - c.getObject().position.x;
       const dz = charRoot.position.z - c.getObject().position.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < 1.5) {
+      if (dist < 0.8) {
         c.collect(scene);
         score.add(10);
       }
