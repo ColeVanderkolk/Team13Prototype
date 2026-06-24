@@ -8,7 +8,7 @@ export class Score {
         this.display = document.createElement('div')
         this.display.style.cssText = `
             position: fixed;
-            top 20px;
+            top: 20px;
             left: 50%;
             transform: translateX(-50%);
             color: white;
