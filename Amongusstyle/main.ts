@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { Timer } from './Timer';
+import { CollectibleSimple } from './CollectibleSimple';
 
 // ─── Renderer ──────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -201,6 +203,35 @@ const rLegPiv = pivot(0.22, 0.35, 0, charRoot);
 box(0.28, 0.4, 0.32, M.dark, 0, -0.2, 0, lLegPiv);
 box(0.28, 0.4, 0.32, M.dark, 0, -0.2, 0, rLegPiv);
 
+// ─── Timer & Collectibles ───────────────────────────────────────────────────
+const timer = new Timer(30 * 60, () => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        color: white;
+        font-size: 48px;
+        font-family: monospace;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    `
+    overlay.textContent = 'Time is up! Game Over.';
+    document.body.appendChild(overlay);
+});
+timer.start();
+
+const collectibles = [
+  new CollectibleSimple(-18, 1, -10),
+  new CollectibleSimple(10,  1, -12),
+  new CollectibleSimple(20,  1,   6),
+  new CollectibleSimple(-2,  1,   8),
+  new CollectibleSimple(-22, 1,  10),
+];
+collectibles.forEach(c => c.addToScene(scene));
+
 // ─── Input ─────────────────────────────────────────────────────────────────
 const keys: Record<string, boolean> = {};
 window.addEventListener('keydown', (e) => {
@@ -279,6 +310,16 @@ function update(dt: number): void {
   lLegPiv.rotation.x = sw * 0.7 * walkBlend;
   rLegPiv.rotation.x = -sw * 0.7 * walkBlend;
   bodyMain.position.y = 0.85 + Math.abs(sw) * 0.06 * walkBlend;
+
+  timer.update();
+  collectibles.forEach(c => {
+    c.update(dt);
+    if (!c.isCollected) {
+      if (charRoot.position.distanceTo(c.getObject().position) < 0.6) {
+        c.collect(scene);
+      }
+    }
+  });
 
   // ── Among Us-style follow camera (fixed angle, follows position) ──
   camLookAt.lerp(charRoot.position, 0.15);
