@@ -321,7 +321,10 @@ function update(dt: number): void {
   collectibles.forEach(c => {
     c.update(dt);
     if (!c.isCollected) {
-      if (charRoot.position.distanceTo(c.getObject().position) < 0.6) {
+      const dx = charRoot.position.x - c.getObject().position.x;
+      const dz = charRoot.position.z - c.getObject().position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < 1.5) {
         c.collect(scene);
         score.add(10);
       }
