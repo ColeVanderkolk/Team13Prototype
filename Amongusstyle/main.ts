@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Timer } from './Timer';
 import { CollectibleSimple } from './CollectibleSimple';
+import { Score } from './Score';
 
 // ─── Renderer ──────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -223,6 +224,7 @@ const timer = new Timer(30 * 60, () => {
 });
 timer.start();
 
+const score = new Score();
 const collectibles = [
   new CollectibleSimple(-18, 1, -10),
   new CollectibleSimple(10,  1, -12),
@@ -311,12 +313,14 @@ function update(dt: number): void {
   rLegPiv.rotation.x = -sw * 0.7 * walkBlend;
   bodyMain.position.y = 0.85 + Math.abs(sw) * 0.06 * walkBlend;
 
+  // Update timer and collectibles
   timer.update();
   collectibles.forEach(c => {
     c.update(dt);
     if (!c.isCollected) {
       if (charRoot.position.distanceTo(c.getObject().position) < 0.6) {
         c.collect(scene);
+        score.add(10);
       }
     }
   });
