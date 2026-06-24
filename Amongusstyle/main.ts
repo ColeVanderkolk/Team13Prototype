@@ -325,7 +325,7 @@ function update(dt: number): void {
       const dx = charRoot.position.x - c.getObject().position.x;
       const dz = charRoot.position.z - c.getObject().position.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < 0.8) {
+      if (dist < 0.5) {
         c.collect(scene);
         score.add(10);
       }
