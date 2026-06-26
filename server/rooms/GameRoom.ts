@@ -39,6 +39,55 @@ export class GameRoom extends Room<GameState> {
     onCreate(options: any) {
         console.log("GameRoom created with options:", options, "| Room ID:", this.roomId);
 
+
+        this.onMessage("move", (client, message: MoveMessage) =>{
+            if (this.state.countdown > 0) return;
+
+            const player = this.state.players.get(client.sessionId);
+            const playerKey = client.sessionId;
+            
+            if (!player || !playerKey) return;
+
+            const { direction } = message;
+
+            let newX = player.x;
+            let newY = player.y;
+        
+            // TODO: implement sprinting and match movement logic with main.ts
+            switch(direction) {
+                case "up":
+                    newY = player.y - 1;
+                    break;
+                case "down":
+                    newY = player.y + 1;
+                    break;
+                case "left":
+                    newX = player.x - 1;
+                    break;
+                case "right":
+                    newX = player.x + 1;
+                    break;
+            }
+
+            // check for collisions with other players
+            let isBlocked = false;
+            this.state.players.forEach((otherPlayer, key) => {
+                if (key !== playerKey &&
+                    otherPlayer.x === newX &&
+                    otherPlayer.y === newY) {
+        
+                    isBlocked = true;
+                }
+            });
+
+            // only move if not blocked
+            if (!isBlocked) {
+                player.x = newX;
+                player.y = newY;
+
+                this.calculateScores();
+            }
+        });
     }
 
     async onJoin(client: Client, options: any) {
@@ -95,7 +144,7 @@ export class GameRoom extends Room<GameState> {
         this.state.isGameOver = true;
 
         console.log("Game ended! Final score: ", this.state.totalScore);
-        
+
         this.disconnect(); 
     }
 
