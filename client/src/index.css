@@ -1,0 +1,365 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "PP Supply Mono";
+  src: url("/.fonts/PPSupplyMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "HF Lorflo";
+  src: url("/fonts/HF Lorflo Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "PP Neue Montreal";
+  src: url("/fonts/PPNeueMontreal-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Game shell (also in `.dark`); defined here so `bg-canvas` never resolves empty if `class="dark"` is missing */
+    --canvas: 226 48% 4%;
+    --canvas-elevated: 224 36% 8%;
+    --hairline: 218 16% 22%;
+  }
+
+  .dark {
+    /* Very dark blue void + technical hairlines (brutalist / dark shell) */
+    --canvas: 226 48% 4%;
+    --canvas-elevated: 224 36% 8%;
+    --hairline: 218 16% 22%;
+
+    --background: 226 48% 4%;
+    --foreground: 218 14% 94%;
+
+    --card: 224 32% 7%;
+    --card-foreground: 218 14% 94%;
+
+    --popover: 224 34% 8%;
+    --popover-foreground: 218 14% 94%;
+
+    --primary: 218 14% 94%;
+    --primary-foreground: 226 48% 8%;
+
+    --secondary: 224 28% 12%;
+    --secondary-foreground: 218 14% 94%;
+
+    --muted: 224 26% 12%;
+    --muted-foreground: 218 12% 58%;
+
+    --accent: 224 28% 12%;
+    --accent-foreground: 218 14% 94%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 218 14% 18%;
+    --input: 218 14% 18%;
+    --ring: 218 20% 45%;
+    --sidebar-background: 226 44% 5%;
+    --sidebar-foreground: 218 14% 94%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 224 28% 12%;
+    --sidebar-accent-foreground: 218 14% 94%;
+    --sidebar-border: 218 14% 18%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  html.dark {
+    background-color: hsl(var(--canvas));
+  }
+}
+
+/* AtlasShapeLoader — dot pulse + glow (transform keeps translate(-50%,-50%) for absolute dots) */
+@keyframes atlas-shape-dot-glow {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(0.88);
+    filter: brightness(0.95);
+    box-shadow:
+      0 0 5px rgba(56, 189, 248, 0.5),
+      0 0 12px rgba(14, 165, 233, 0.25);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.14);
+    filter: brightness(1.12);
+    box-shadow:
+      0 0 10px rgba(34, 211, 238, 0.95),
+      0 0 22px rgba(56, 189, 248, 0.55),
+      0 0 36px rgba(14, 165, 233, 0.3);
+  }
+}
+
+@keyframes atlas-shape-dot-glow-active {
+  0%,
+  100% {
+    opacity: 0.92;
+    transform: translate(-50%, -50%) scale(1);
+    box-shadow:
+      0 0 8px rgba(34, 211, 238, 0.9),
+      0 0 20px rgba(56, 189, 248, 0.65);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.18);
+    box-shadow:
+      0 0 14px rgba(125, 211, 252, 1),
+      0 0 28px rgba(34, 211, 238, 0.75),
+      0 0 42px rgba(14, 165, 233, 0.45);
+  }
+}
+
+/* Sonner — match in-game polar HUD (glass + hairline; vars also on Toaster inline style) */
+[data-sonner-toaster] {
+  font-family: "PP Supply Mono", ui-monospace, monospace, system-ui, sans-serif !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 32px -14px rgba(0, 0, 0, 0.72) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast]:focus-visible {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 32px -14px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(125, 211, 252, 0.35) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-theme="dark"] [data-cancel] {
+  color: inherit !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-button][data-action] {
+  color: hsl(var(--foreground)) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-button][data-action]:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+
+[data-sonner-toaster] .sonner-loading-bar {
+  background: rgba(186, 230, 253, 0.45) !important;
+}
+
+/* Lobby footer-style audio bar (range + viz) */
+@keyframes lobby-audio-viz {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scaleY(0.65);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleY(1.15);
+  }
+}
+
+.lobby-audio-viz-bar {
+  transform-origin: bottom center;
+  animation: lobby-audio-viz 0.55s ease-in-out infinite;
+}
+
+.lobby-audio-range {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.lobby-audio-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+
+.lobby-audio-range::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+
+.lobby-audio-range::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+/* Lobby: slot that just gained a player — outline + brief overshoot */
+@keyframes lobby-slot-join-shape {
+  0% {
+    transform: scale(0.9);
+    filter: brightness(1.15);
+  }
+  24% {
+    transform: scale(1.16);
+    filter: brightness(1.35);
+  }
+  52% {
+    transform: scale(0.97);
+    filter: brightness(1.08);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+.lobby-slot-join-shape-pop {
+  animation: lobby-slot-join-shape 1.05s cubic-bezier(0.22, 1, 0.32, 1) forwards;
+}
+
+/* Whole slot cell (shape + label) subtle lift during join */
+@keyframes lobby-slot-join-cell {
+  0% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.lobby-slot-join-cell-pop {
+  animation: lobby-slot-join-cell 1.05s cubic-bezier(0.22, 1, 0.32, 1) forwards;
+}
+
+/* Lobby: shimmer sweep on filled progress bar segments */
+@keyframes lobby-bar-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.lobby-bar-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.22) 40%,
+    rgba(255, 255, 255, 0.35) 50%,
+    rgba(255, 255, 255, 0.22) 60%,
+    transparent 100%
+  );
+  animation: lobby-bar-shimmer 2.8s ease-in-out infinite;
+}
+
+/* Suppress lobby motion for reduced-motion users */
+@media (prefers-reduced-motion: reduce) {
+  .lobby-bar-shimmer,
+  .lobby-slot-join-shape-pop,
+  .lobby-slot-join-cell-pop {
+    animation: none;
+  }
+}
+
+/* Tutorial: soft glow while waiting for clear-board votes (replaces GameScreen-only keyframes) */
+@keyframes tutorial-vote-await {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 0 rgba(56, 189, 248, 0);
+  }
+  50% {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.11), 0 0 14px rgba(56, 189, 248, 0.18);
+  }
+}
+
+.tutorial-vote-await-pulse {
+  animation: tutorial-vote-await 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-vote-await-pulse {
+    animation: none;
+  }
+}
