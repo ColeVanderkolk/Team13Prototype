@@ -43,7 +43,16 @@ export class GameRoom extends Room<GameState> {
 
     async onJoin(client: Client, options: any) {
         const player = new Player();
+        this.state = new GameState();
         this.state.players.set(client.sessionId, player);
+
+        if (this.isSoloMode && this.state.players.size === 1 && !this.state.gameStarted) {
+            this.initializeGame();
+        }
+
+        if (this.state.players.size == 3 && !this.state.gameStarted) {  
+            this.initializeGame();
+        } 
     }
 
     onLeave(client: Client, consented: boolean) { 
@@ -62,6 +71,32 @@ export class GameRoom extends Room<GameState> {
     private async initializeGame() {
         this.generateInitialCollectibles();
         this.calculateScores(); 
+
+        this.startGameTimer();
+    }
+
+    private startGameTimer() {
+        this.gameTimer = setInterval(() => {
+            if (this.state.timeRemaining > 0) {
+                this.state.timeRemaining--;
+            }
+
+            if (this.state.timeRemaining <= 0 && !this.state.isGameOver /*&& !this.isDevMode*/) {
+                this.endGame();
+            }
+        }, 1000);
+    }
+
+    private async endGame() {
+        if (this.gameTimer) {
+            clearInterval(this.gameTimer);
+            this.gameTimer = null;
+        }
+        this.state.isGameOver = true;
+
+        console.log("Game ended! Final score: ", this.state.totalScore);
+        
+        this.disconnect(); 
     }
 
     private generateInitialCollectibles() {
