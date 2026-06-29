@@ -469,7 +469,7 @@ export const GameScreen = ({
 
 
       {/* Timer Display - Bottom Center (polar blue chrome) */}
-      <div className="absolute top-4 left-1/2 z-10 -translate-x-1/2">
+      <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
         <div
           className="relative min-w-[7.25rem] whitespace-nowrap rounded-none border border-solid bg-canvas/50 px-4 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-inset ring-white/[0.06] backdrop-blur-[4px]"
           style={{ borderColor: POLAR_HUD.border }}

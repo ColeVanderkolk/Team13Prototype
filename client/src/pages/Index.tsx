@@ -10,6 +10,10 @@ import { GameScreen } from "@/screens/GameScreen";
 import { useSounds } from "@/hooks/use-sounds";
 import { ResultsOverlay } from "@/components/game/ResultsOverlay";
 
+// const connect = async () => {
+//   console.log("soloMode from initPayload:", initPayload.soloMode);
+// }
+
 /** Build a redirect URL back to the platform with query params */
 function buildReturnUrl(returnUrl: string, params: Record<string, string | number>): string {
   const url = new URL(returnUrl);
@@ -285,12 +289,14 @@ const Index = () => {
             break;
           }
           const gameRoom = await client.joinById<ServerGameState>(roomId, {
+            soloMode: initPayload.soloMode,
             gameToken: initPayload.gameToken,
             userId: initPayload.userId,
             playerName: initPayload.playerName,
             spectator: initPayload.spectator,
             sessionId: initPayload.sessionId,
           });
+
 
           const updateState = setupRoom(gameRoom);
           updateState();
@@ -323,6 +329,7 @@ const Index = () => {
         // server-assigned room id is the shareable code others join by.
         const gameRoom = initPayload.roomId
           ? await client.joinById<ServerGameState>(initPayload.roomId, {
+              soloMode: initPayload.soloMode,
               gameToken: initPayload.gameToken,
               userId: initPayload.userId,
               playerName: initPayload.playerName,
@@ -335,6 +342,9 @@ const Index = () => {
               playerName: initPayload.playerName,
               devMode: initPayload.devMode,
             });
+
+            
+          console.log("roomId:", initPayload.roomId, "| soloMode:", initPayload.soloMode);
 
         connectedRoomIdRef.current = gameRoom.roomId;
 
@@ -431,8 +441,7 @@ const Index = () => {
           room?.leave();
           resultsReasonRef.current = "abandoned";
           setShowResults(true);
-        }}
-      />
+        } } isSoloMode={initPayload?.soloMode || false}      />
       {/* TODO: revert — temporarily showing overlay in solo mode */}
       {(gameState.countdown > 0 || showGo) && (() => {
         const from = 10;
