@@ -35,10 +35,13 @@ export class GameRoom extends Room<GameState> {
     private gameTimer: ReturnType<typeof setInterval> | null = null; 
     private readonly GAME_DURATION = 30 * 60; // 30 minutes in seconds
     private isSoloMode: boolean = false; 
+    private gameStartTime: number = 0;
 
     onCreate(options: any) {
         console.log("GameRoom created with options:", options, "| Room ID:", this.roomId);
-
+        
+        this.setState(new GameState());
+        this.isSoloMode = options?.soloMode === true;
 
         this.onMessage("move", (client, message: MoveMessage) =>{
             if (this.state.countdown > 0) return;
@@ -92,7 +95,6 @@ export class GameRoom extends Room<GameState> {
 
     async onJoin(client: Client, options: any) {
         const player = new Player();
-        this.state = new GameState();
         this.state.players.set(client.sessionId, player);
 
         if (this.isSoloMode && this.state.players.size === 1 && !this.state.gameStarted) {
@@ -124,7 +126,11 @@ export class GameRoom extends Room<GameState> {
         this.startGameTimer();
     }
 
+    // TODO: timer does not count down
     private startGameTimer() {
+        this.state.timeRemaining = this.GAME_DURATION;
+        this.gameStartTime = Date.now();
+        
         this.gameTimer = setInterval(() => {
             if (this.state.timeRemaining > 0) {
                 this.state.timeRemaining--;
