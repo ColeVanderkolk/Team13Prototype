@@ -257,6 +257,13 @@ let animClock = 0;
 let walkBlend = 0;
 const CHAR_RADIUS = 0.45;
 
+// Idea for the next-level ascent transition:
+// - Create a trigger zone near a portal or doorway.
+// - When the player enters it, pause movement and start a short transition timer.
+// - Fade the screen or darken the scene, then move the player to the next level spawn.
+// - After the transition, restore control and show a short "Ascending" or "Level X" message.
+// - This can be implemented later as a portal ring, a glowing door, or a simple elevator-style zone.
+
 // ─── Resize ────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -267,6 +274,13 @@ window.addEventListener('resize', () => {
 // ─── Update ────────────────────────────────────────────────────────────────
 function update(dt: number): void {
   if (gameOver) return;
+
+  // Future transition logic idea:
+  // 1. Check if the player is inside a defined trigger area.
+  // 2. If so, begin a short transition state.
+  // 3. Disable movement during the transition.
+  // 4. After the timer ends, teleport or animate the player to the next level spawn point.
+
   const sprinting = keys['ShiftLeft'] || keys['ShiftRight'];
   const speed = sprinting ? SPRINT_SPEED : WALK_SPEED;
 
