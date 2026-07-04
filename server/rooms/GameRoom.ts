@@ -31,6 +31,7 @@ export class GameRoom extends Room<GameState> {
     private isDevMode: boolean = false;
     private gameStartTime: number = 0;
     private lastAcceptedAt = new Map<string, number>();
+    private countdownTimer: ReturnType<typeof setInterval> | null = null;
 
     onCreate(options: any) {
         console.log("GameRoom created with options:", options, "| Room ID:", this.roomId);
@@ -39,7 +40,10 @@ export class GameRoom extends Room<GameState> {
         this.isSoloMode = options?.soloMode === true;
         this.isDevMode = options?.devMode === true;
         this.setPatchRate(1000 / 60);
-        this.buildMazeForStage(1);
+
+        if (this.isSoloMode) {
+            this.buildMazeForStage(1);
+        }
 
         this.onMessage("position", (client, message: PositionMessage) => {
             this.handlePosition(client, message);
@@ -68,10 +72,12 @@ export class GameRoom extends Room<GameState> {
 
         if (this.isSoloMode && this.state.players.size === 1 && !this.state.gameStarted) {
             this.initializeGame();
+            this.startGameplay();
         }
 
         if (this.state.players.size == 3 && !this.state.gameStarted) {  
             this.initializeGame();
+            this.startGameplay();
         } 
     }
 
@@ -89,6 +95,27 @@ export class GameRoom extends Room<GameState> {
         }
     }
 
+    private startGameplay() {
+        console.log("Starting countdown...");
+
+        this.state.countdown = 10;
+        this.countdownTimer = setInterval(() => {
+            // Explicit assignment so @colyseus/schema always encodes a patch (postfix -- can miss updates in some builds).
+            const next = this.state.countdown - 1;
+            this.state.countdown = next;
+            if (next <= 0) {
+                if (this.countdownTimer) {
+                    clearInterval(this.countdownTimer);
+                    this.countdownTimer = null;
+                }
+                this.state.timeRemaining = this.GAME_DURATION;
+                this.gameStartTime = Date.now();
+                this.startGameTimer();
+                console.log("Countdown complete — game timer started!");
+            }
+        }   , 1000);
+    }
+
     private async initializeGame() {
         this.state.gameStarted = true;
         this.buildMazeForStage(this.state.stage || 1, this.state.seed || undefined);
@@ -96,10 +123,8 @@ export class GameRoom extends Room<GameState> {
         this.generateInitialCollectibles();
         this.calculateScores(); 
 
-        this.startGameTimer();
     }
 
-    // TODO: timer does not count down
     private startGameTimer() {
         if (this.gameTimer) {
             clearInterval(this.gameTimer);
