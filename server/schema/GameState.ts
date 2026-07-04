@@ -3,6 +3,8 @@ import { Schema, type, MapSchema, ArraySchema } from "@colyseus/schema";
 export class Player extends Schema {
     @type("number") x: number = 0;
     @type("number") y: number = 0;
+    @type("string") sessionId: string = "";
+    @type("string") name: string = "";
 }
 
 export class Collectible extends Schema {
@@ -15,6 +17,26 @@ export class Collectible extends Schema {
 export class GameState extends Schema {
     // TODO: fill this out
     @type({ map : Player }) players = new MapSchema<Player>();
+
+    @type("number") gridWidth: number = 9;
+
+    @type("number") gridHeight: number = 9;
+
+    @type(["number"]) mazeWalls = new ArraySchema<number>();
+
+    @type("number") startX: number = 0;
+
+    @type("number") startY: number = 0;
+
+    @type("number") exitX: number = 8;
+
+    @type("number") exitY: number = 8;
+
+    @type("boolean") exitUnlocked: boolean = true;
+
+    @type("number") pressurePlatesRequired: number = 0;
+
+    @type("number") pressurePlatesActivated: number = 0;
 
     @type([Collectible]) collectibles = new ArraySchema<Collectible>();
 

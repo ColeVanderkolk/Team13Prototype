@@ -47,9 +47,17 @@ interface ServerGameState {
     players: Map<string, PlayerState>;
     gridWidth: number;
     gridHeight: number;
+    mazeWalls: { forEach: (callback: (wallMask: number) => void) => void };
+    startX: number;
+    startY: number;
+    exitX: number;
+    exitY: number;
+    exitUnlocked: boolean;
+    pressurePlatesRequired: number;
+    pressurePlatesActivated: number;
     totalScore: number;
     gameStarted: boolean;
-    coutdown: number;
+    countdown: number;
     isGameOver: boolean;
     timeRemaining: number;
     collectibles: Map<string, Collectible>;
@@ -61,6 +69,14 @@ interface ServerGameState {
 interface GameStateLocal {
   gridWidth: number;
   gridHeight: number;
+  mazeWalls: number[];
+  startX: number;
+  startY: number;
+  exitX: number;
+  exitY: number;
+  exitUnlocked: boolean;
+  pressurePlatesRequired: number;
+  pressurePlatesActivated: number;
   players: Map<string, PlayerState>;
   collectibles: Collectible[];
   totalScore: number;
@@ -79,6 +95,14 @@ type GameAction = { type:"SYNC_STATE"; payload: GameStateLocal };
 const initialGameState: GameStateLocal = {
     gridWidth: 10,
     gridHeight: 8,
+    mazeWalls: [],
+    startX: 0,
+    startY: 0,
+    exitX: 9,
+    exitY: 7,
+    exitUnlocked: true,
+    pressurePlatesRequired: 0,
+    pressurePlatesActivated: 0,
     players: new Map(),
     collectibles: [],
     totalScore: 0,
@@ -189,12 +213,22 @@ const Index = () => {
       });
     });
 
+    const mazeWalls: number[] = [];
+    gameRoom.state.mazeWalls?.forEach((wallMask) => mazeWalls.push(wallMask));
 
     dispatch({
       type: "SYNC_STATE",
       payload: {
           gridWidth: gameRoom.state.gridWidth || 10,
           gridHeight: gameRoom.state.gridHeight || 8,
+          mazeWalls,
+          startX: gameRoom.state.startX || 0,
+          startY: gameRoom.state.startY || 0,
+          exitX: gameRoom.state.exitX ?? Math.max(0, (gameRoom.state.gridWidth || 10) - 1),
+          exitY: gameRoom.state.exitY ?? Math.max(0, (gameRoom.state.gridHeight || 8) - 1),
+          exitUnlocked: gameRoom.state.exitUnlocked ?? true,
+          pressurePlatesRequired: gameRoom.state.pressurePlatesRequired || 0,
+          pressurePlatesActivated: gameRoom.state.pressurePlatesActivated || 0,
           totalScore: gameRoom.state.totalScore || 0,
           gameStarted: gameRoom.state.gameStarted || false,
           stage: gameRoom.state.stage || 1,
@@ -204,7 +238,7 @@ const Index = () => {
           isGameOver: gameRoom.state.isGameOver || false,
           timeRemaining: gameRoom.state.timeRemaining ?? 30 * 60,
           stageThresholds: [],
-          countdown: 0
+          countdown: gameRoom.state.countdown || 0
       },
     });
   }, []);
@@ -431,6 +465,15 @@ const Index = () => {
       <GameScreen
         room={room}
         players={gameState.players}
+        gridWidth={gameState.gridWidth}
+        gridHeight={gameState.gridHeight}
+        mazeWalls={gameState.mazeWalls}
+        startX={gameState.startX}
+        startY={gameState.startY}
+        exitX={gameState.exitX}
+        exitY={gameState.exitY}
+        exitUnlocked={gameState.exitUnlocked}
+        collectibles={gameState.collectibles}
         totalScore={gameState.totalScore}
         stage={gameState.stage}
         timeRemaining={gameState.timeRemaining}

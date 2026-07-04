@@ -11,14 +11,8 @@ import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { NoiseFieldOverlay, type NoiseFieldHandle } from "@/components/game/NoiseFieldOverlay";
 import { StageAnnouncement } from "@/components/game/StageAnnouncement";
 import { DevStageControls } from "@/components/game/DevStageControls";
+import { MazeBoard } from "@/components/game/MazeBoard";
 import * as THREE from "three";
-
-const CONTROL_KEYS = {
-  up: ["ArrowUp", "w", "W"],
-  down: ["ArrowDown", "s", "S"],
-  left: ["ArrowLeft", "a", "A"],
-  right: ["ArrowRight", "d", "D"],
-};
 
 // Error boundary to catch silent Canvas/Three.js crashes
 class CanvasErrorBoundary extends Component<
@@ -91,6 +85,15 @@ interface Collectible {
 interface GameScreenProps {
     room: Client.Room | null;
     players: Map<string, PlayerState>;
+    gridWidth: number;
+    gridHeight: number;
+    mazeWalls: number[];
+    startX: number;
+    startY: number;
+    exitX: number;
+    exitY: number;
+    exitUnlocked: boolean;
+    collectibles: Collectible[];
     totalScore: number; 
     stage: number;
     timeRemaining: number; 
@@ -104,6 +107,15 @@ interface GameScreenProps {
 export const GameScreen = ({
     room,
     players, 
+    gridWidth,
+    gridHeight,
+    mazeWalls,
+    startX,
+    startY,
+    exitX,
+    exitY,
+    exitUnlocked,
+    collectibles,
     totalScore,
     stage,
     timeRemaining,
@@ -155,38 +167,6 @@ export const GameScreen = ({
         }, SETTINGS_CLOSE_MS);
     };
     
-    // Keyboard controls
-    useEffect(() => {
-        const REPEAT_INTERVAL = 1000 / 5; // 5 times per second
-
-        const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.repeat) {
-            const now = performance.now();
-            if (now - lastRepeatTimeRef.current < REPEAT_INTERVAL) return;
-            lastRepeatTimeRef.current = now;
-        }
-
-        let direction: "up" | "down" | "left" | "right" | null = null;
-        if (CONTROL_KEYS.up.includes(e.key)) direction = "up";
-        else if (CONTROL_KEYS.down.includes(e.key)) direction = "down";
-        else if (CONTROL_KEYS.left.includes(e.key)) direction = "left";
-        else if (CONTROL_KEYS.right.includes(e.key)) direction = "right";
-
-        if (direction) {
-            e.preventDefault();
-            const seq = ++seqCounterRef.current; 
-
-            room.send("move", {
-                    direction,
-                    seq
-                });
-        }
-        };
-
-        window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [room, players, isDevMode, countdown]);
-
   return (
     <div className="isolate w-full h-screen relative overflow-hidden bg-canvas">
       {/* Cloud nebula backdrop is rendered inside the R3F Canvas (NebulaBackdrop). */}
@@ -463,10 +443,33 @@ export const GameScreen = ({
           data-ui="game-stage-chip"
         >
           <HudCornerLs />
+          <div className="relative z-[1]">
+            <p className="font-montreal text-[9px] uppercase leading-tight tracking-[0.12em] text-slate-300">Level</p>
+            <p className="mt-1 font-montreal text-3xl font-bold leading-none text-white">
+              {effectiveStage}
+            </p>
+          </div>
         </div>
       </div>
 
 
+
+      {/* Score Display - Top Right (temporary scoring shell for collectible pickups) */}
+      <div className="absolute right-4 top-4 z-10">
+        <div
+          className="relative min-w-[7.25rem] whitespace-nowrap rounded-none border border-solid bg-canvas/50 px-4 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-inset ring-white/[0.06] backdrop-blur-[4px]"
+          style={{ borderColor: POLAR_HUD.border }}
+          data-ui="game-score-chip"
+        >
+          <HudCornerLs />
+          <div className="relative z-[1]">
+            <p className="font-montreal text-[9px] uppercase leading-tight tracking-[0.12em] text-slate-300">Score</p>
+            <p className="mt-1 font-montreal text-3xl font-bold leading-none text-white">
+              {totalScore}
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Timer Display - Bottom Center (polar blue chrome) */}
       <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
@@ -492,6 +495,8 @@ export const GameScreen = ({
       <Canvas
         className="absolute inset-0 z-[1] h-full w-full min-h-0"
         style={{ background: "#000000" }}
+        shadows
+        camera={{ position: [0, 12, 12], fov: 46, near: 0.1, far: 120 }}
         gl={{
           powerPreference: "default",
           failIfMajorPerformanceCaveat: false,
@@ -508,6 +513,23 @@ export const GameScreen = ({
         }}
       >
         <NebulaBackdrop />
+
+        <MazeBoard
+          gridWidth={gridWidth}
+          gridHeight={gridHeight}
+          mazeWalls={mazeWalls}
+          startX={startX}
+          startY={startY}
+          exitX={exitX}
+          exitY={exitY}
+          exitUnlocked={exitUnlocked}
+          seed={seed}
+          collectibles={collectibles}
+          players={players}
+          room={room}
+          countdown={countdown}
+          currentSessionId={room?.sessionId}
+        />
 
         <DeferredEffects />
 

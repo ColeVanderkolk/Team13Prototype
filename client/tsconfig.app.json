@@ -25,6 +25,6 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  }, "include":null, ["src"]  
-  
+  },
+  "include": ["src"]
 }
