@@ -4,6 +4,7 @@ import type * as Client from "colyseus.js";
 import * as THREE from "three";
 import { MazeCollectibles } from "./MazeCollectibles";
 import { MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
+import { PressurePlates } from "./PressurePlates";
 
 const WALL_NORTH = 1;
 const WALL_EAST = 2;
@@ -61,6 +62,7 @@ interface MazeBoardProps {
   room: Client.Room | null;
   countdown?: number;
   currentSessionId?: string | null;
+  pressurePlatesRequired: number; // 0 in solo, 3 in multiplayer
 }
 
 interface LocalPosition {
@@ -267,6 +269,7 @@ export function MazeBoard({
   room,
   countdown,
   currentSessionId,
+  pressurePlatesRequired,
 }: MazeBoardProps) {
   const hasMaze = gridWidth > 0 && gridHeight > 0 && mazeWalls.length === gridWidth * gridHeight;
   const boardWidth = gridWidth * CELL_SIZE;
@@ -567,6 +570,15 @@ export function MazeBoard({
             localPositionRef={sessionId === currentSessionId ? localPositionRef : undefined}
           />
         ))}
+
+        <PressurePlates
+          exitX={exitX}
+          exitY={exitY}
+          exitWorldX={exitWorldX}
+          exitWorldZ={exitWorldZ}
+          players={players}
+          pressurePlatesRequired={pressurePlatesRequired}
+        />
       </group>
     </>
   );

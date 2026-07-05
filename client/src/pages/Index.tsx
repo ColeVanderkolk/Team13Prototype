@@ -484,7 +484,7 @@ const Index = () => {
           room?.leave();
           resultsReasonRef.current = "abandoned";
           setShowResults(true);
-        } } isSoloMode={initPayload?.soloMode || false}      />
+        } } isSoloMode={initPayload?.soloMode || false} pressurePlatesRequired={gameState.pressurePlatesRequired} />
       {/* TODO: revert — temporarily showing overlay in solo mode */}
       {(gameState.countdown > 0 || showGo) && (() => {
         const from = 10;

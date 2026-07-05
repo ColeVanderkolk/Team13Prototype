@@ -26,12 +26,14 @@ export class GameRoom extends Room<GameState> {
     private readonly PLAYER_RADIUS = 0.23;
     private readonly POSITION_GRACE = 0.9;
     private readonly COLLECTIBLE_SCORE = 10;
-    private readonly COLLECTIBLE_PICKUP_RADIUS = 0.9;
+    private readonly COLLECTIBLE_PICKUP_RADIUS = 0.7;
     private isSoloMode: boolean = false; 
     private isDevMode: boolean = false;
     private gameStartTime: number = 0;
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
+    private readonly PLATE_RADIUS = 0.2;
+    private readonly PLATE_OFFSETS = [{ dx: -0.25, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0.25, dy: 0 }];
 
     onCreate(options: any) {
         console.log("GameRoom created with options:", options, "| Room ID:", this.roomId);
@@ -234,6 +236,7 @@ export class GameRoom extends Room<GameState> {
         player.x = x;
         player.y = y;
         this.lastAcceptedAt.set(client.sessionId, Date.now());
+        this.checkPressurePlates();
 
         if (this.canAdvanceLevel(player)) {
             this.advanceLevel();
@@ -324,11 +327,59 @@ export class GameRoom extends Room<GameState> {
     }
 
     private configureLevelObjective() {
-        // Future pressure plates can set this to 3 and keep exitUnlocked false until all plates are active.
-        this.state.pressurePlatesRequired = 0;
-        this.state.pressurePlatesActivated = 0;
+        if (this.isSoloMode) {
+            // solo mode — 1 plate to step on before the exit opens
+            this.state.pressurePlatesRequired = 1;
+            this.state.pressurePlatesActivated = 0;
+            this.state.exitUnlocked = false;
+        } else {
+            // multiplayer — all 3 players must stand on their plates at the same time
+            this.state.pressurePlatesRequired = 3;
+            this.state.pressurePlatesActivated = 0;
+            this.state.exitUnlocked = false;
+        }
+    }
+
+    private checkPressurePlates() {
+    // already unlocked — no need to keep checking
+    if (this.state.exitUnlocked) return;
+    if (this.state.pressurePlatesRequired === 0) return;
+
+    let activated = 0;
+
+    if (this.isSoloMode) {
+        // solo — the one player just needs to stand on the center plate
+        const player = Array.from(this.state.players.values())[0];
+        if (player) {
+            const plateX = this.state.exitX + this.PLATE_OFFSETS[1].dx;
+            const plateY = this.state.exitY + this.PLATE_OFFSETS[1].dy;
+            if (Math.hypot(player.x - plateX, player.y - plateY) < this.PLATE_RADIUS) {
+                activated = 1;
+            }
+        }
+    } else {
+        // multiplayer — sort players the same way the client does (by sessionId alphabetically)
+        // so player 0 = teal plate, player 1 = red plate, player 2 = yellow plate
+        const ordered = Array.from(this.state.players.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([_, p]) => p);
+
+        for (let i = 0; i < this.PLATE_OFFSETS.length && i < ordered.length; i++) {
+            const player = ordered[i];
+            const plateX = this.state.exitX + this.PLATE_OFFSETS[i].dx;
+            const plateY = this.state.exitY + this.PLATE_OFFSETS[i].dy;
+            if (Math.hypot(player.x - plateX, player.y - plateY) < this.PLATE_RADIUS) {
+                activated++;
+            }
+        }
+    }
+
+    this.state.pressurePlatesActivated = activated;
+
+    if (activated >= this.state.pressurePlatesRequired) {
         this.state.exitUnlocked = true;
     }
+}
 
     private advanceLevel() {
         const nextStage = this.state.stage + 1;

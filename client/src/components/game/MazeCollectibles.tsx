@@ -5,7 +5,7 @@ import type * as Client from "colyseus.js";
 import { CollectibleSimple } from "../../../../Amongusstyle/CollectibleSimple";
 
 const CELL_SIZE = 1.8;
-const PICKUP_RADIUS = 0.55;
+const PICKUP_RADIUS = 0.20;
 
 interface MazeCollectible {
   x: number;
@@ -49,13 +49,13 @@ function CollectibleSimpleObject({
 
   useEffect(() => {
     const instance = new CollectibleSimple(worldX, 0.85, worldZ);
-    instance.addToScene(scene);
+    instance.addToScene(scene as any);
     instanceRef.current = instance;
     hasReportedRef.current = false;
 
     return () => {
       // Cleanup uses the prototype collect method so the object is removed the same way as in Amongusstyle.
-      instance.collect(scene);
+      instance.collect(scene as any);
       instanceRef.current = null;
     };
   }, [scene, worldX, worldZ]);
@@ -70,7 +70,7 @@ function CollectibleSimpleObject({
     const dy = localPositionRef.current.y - collectible.y;
     if (!hasReportedRef.current && Math.hypot(dx, dy) < PICKUP_RADIUS) {
       hasReportedRef.current = true;
-      instance.collect(scene);
+      instance.collect(scene as any);
       room?.send("collect", { id: collectible.id });
     }
   });
