@@ -26,6 +26,13 @@ const PLAYER_RADIUS = 0.23;
 const CAM_ANGLE = Math.PI * 0.25;
 const POSITION_SEND_INTERVAL = 1 / 20;
 
+// First-person mode (toggle with V)
+const FP_EYE_HEIGHT = 0.62;
+const FP_FOV = 70;
+const OVERHEAD_FOV = 46;
+const FP_MOUSE_SENSITIVITY = 0.0032; // radians per pixel of mouse movement
+const FP_PITCH_LIMIT = 0.6; // how far you can look up/down (radians)
+
 const CONTROL_CODES = {
   up: ["KeyW", "ArrowUp"],
   down: ["KeyS", "ArrowDown"],
@@ -113,11 +120,17 @@ function MazeCamera({
   gridHeight,
   target,
   targetRef,
+  firstPersonRef,
+  fpYawRef,
+  fpPitchRef,
 }: {
   gridWidth: number;
   gridHeight: number;
   target: [number, number];
   targetRef?: MutableRefObject<LocalPosition>;
+  firstPersonRef?: MutableRefObject<boolean>;
+  fpYawRef?: MutableRefObject<number>;
+  fpPitchRef?: MutableRefObject<number>;
 }) {
   const { camera, gl } = useThree();
   const lookAtRef = useRef(new THREE.Vector3(target[0], 0.24, target[1]));
@@ -141,6 +154,32 @@ function MazeCamera({
   }, [gl]);
 
   useFrame((_state, delta) => {
+    const persp = camera as THREE.PerspectiveCamera;
+
+    // ── First person: camera sits at the player's eye height, facing fpYaw ──
+    if (firstPersonRef?.current && targetRef && fpYawRef) {
+      const [fx, fz] = cellToWorld(gridWidth, gridHeight, targetRef.current.x, targetRef.current.y);
+      if (persp.fov !== FP_FOV) {
+        persp.fov = FP_FOV;
+        persp.updateProjectionMatrix();
+      }
+      const yaw = fpYawRef.current;
+      const pitch = fpPitchRef?.current ?? 0;
+      const cosPitch = Math.cos(pitch);
+      camera.position.set(fx, FP_EYE_HEIGHT, fz);
+      camera.lookAt(
+        fx + Math.sin(yaw) * cosPitch,
+        FP_EYE_HEIGHT + Math.sin(pitch),
+        fz + Math.cos(yaw) * cosPitch,
+      );
+      return;
+    }
+
+    // ── Overhead mode (original behavior) ──
+    if (persp.fov !== OVERHEAD_FOV) {
+      persp.fov = OVERHEAD_FOV;
+      persp.updateProjectionMatrix();
+    }
     const camAngle = Math.PI * 0.25;
     const camPitch = 1.05;
     const distance = distanceRef.current;
@@ -174,6 +213,7 @@ function PlayerToken({
   gridWidth,
   gridHeight,
   localPositionRef,
+  firstPersonRef,
 }: {
   player: MazePlayer;
   index: number;
@@ -181,6 +221,7 @@ function PlayerToken({
   gridWidth: number;
   gridHeight: number;
   localPositionRef?: MutableRefObject<LocalPosition>;
+  firstPersonRef?: MutableRefObject<boolean>;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const desiredPosition = useRef(new THREE.Vector3());
@@ -208,6 +249,10 @@ function PlayerToken({
 
     const visualTarget = getVisualTarget();
     desiredPosition.current.set(visualTarget.x, visualTarget.y, visualTarget.z);
+
+    // Hide your own avatar in first person so the camera isn't inside the model
+    groupRef.current.visible = !(isMe && firstPersonRef?.current);
+
     const moveX = visualTarget.x - groupRef.current.position.x;
     const moveZ = visualTarget.z - groupRef.current.position.z;
     const moving = Math.hypot(moveX, moveZ) > 0.006;
@@ -289,12 +334,16 @@ export function MazeBoard({
   const gridSpan = Math.max(boardWidth, boardDepth);
   const [startWorldX, startWorldZ] = cellToWorld(gridWidth, gridHeight, startX, startY);
   const [exitWorldX, exitWorldZ] = cellToWorld(gridWidth, gridHeight, exitX, exitY);
+  const { gl } = useThree();
   const currentPlayer = currentSessionId ? players.get(currentSessionId) : undefined;
   const localPositionRef = useRef<LocalPosition>({
     x: currentPlayer?.x ?? startX,
     y: currentPlayer?.y ?? startY,
   });
   const pressedKeysRef = useRef<Set<string>>(new Set());
+  const firstPersonRef = useRef(false); // toggled with the V key
+  const fpYawRef = useRef(0); // horizontal facing while in first person
+  const fpPitchRef = useRef(0); // vertical look while in first person
   const lastSentAtRef = useRef(0);
   const lastSentPositionRef = useRef<LocalPosition>({ x: Number.NaN, y: Number.NaN });
   const lastMazeSignatureRef = useRef("");
@@ -388,10 +437,47 @@ export function MazeBoard({
       event.code === "ShiftLeft" ||
       event.code === "ShiftRight";
 
+    const canvas = gl.domElement;
+
+    const requestLock = () => {
+      try {
+        const result = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+        if (result && typeof result.catch === "function") result.catch(() => {});
+      } catch {
+        // pointer lock unavailable (e.g. iframe permissions) - FP still works, mouse just isn't captured
+      }
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "KeyV") {
+        firstPersonRef.current = !firstPersonRef.current;
+        if (firstPersonRef.current) {
+          requestLock();
+        } else if (document.pointerLockElement === canvas) {
+          document.exitPointerLock();
+        }
+        return;
+      }
       if (!isControlKey(event)) return;
       event.preventDefault();
       pressedKeysRef.current.add(event.code);
+    };
+
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!firstPersonRef.current) return;
+      if (document.pointerLockElement !== canvas) return;
+      fpYawRef.current -= event.movementX * FP_MOUSE_SENSITIVITY;
+      fpPitchRef.current = Math.max(
+        -FP_PITCH_LIMIT,
+        Math.min(FP_PITCH_LIMIT, fpPitchRef.current - event.movementY * FP_MOUSE_SENSITIVITY),
+      );
+    };
+
+    const handleCanvasClick = () => {
+      // Esc releases the mouse; clicking the game re-captures it while in first person
+      if (firstPersonRef.current && document.pointerLockElement !== canvas) {
+        requestLock();
+      }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
@@ -405,14 +491,19 @@ export function MazeBoard({
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", handleBlur);
+    window.addEventListener("mousemove", handleMouseMove);
+    canvas.addEventListener("click", handleCanvasClick);
 
     return () => {
       pressedKeysRef.current.clear();
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("mousemove", handleMouseMove);
+      canvas.removeEventListener("click", handleCanvasClick);
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
-  }, []);
+  }, [gl]);
 
   useEffect(() => {
     if (!room) return;
@@ -471,12 +562,24 @@ export function MazeBoard({
     const moving = forward !== 0 || right !== 0;
 
     if (moving) {
-      const forwardX = -Math.sin(CAM_ANGLE);
-      const forwardY = -Math.cos(CAM_ANGLE);
-      const rightX = -forwardY;
-      const rightY = forwardX;
-      let moveX = forwardX * forward + rightX * right;
-      let moveY = forwardY * forward + rightY * right;
+      let moveX = 0;
+      let moveY = 0;
+
+      if (firstPersonRef.current) {
+        // First person: mouse looks, W/S move along facing, A/D strafe
+        const sinYaw = Math.sin(fpYawRef.current);
+        const cosYaw = Math.cos(fpYawRef.current);
+        moveX = sinYaw * forward - cosYaw * right;
+        moveY = cosYaw * forward + sinYaw * right;
+      } else {
+        // Overhead: move relative to the fixed camera angle (original behavior)
+        const forwardX = -Math.sin(CAM_ANGLE);
+        const forwardY = -Math.cos(CAM_ANGLE);
+        const rightX = -forwardY;
+        const rightY = forwardX;
+        moveX = forwardX * forward + rightX * right;
+        moveY = forwardY * forward + rightY * right;
+      }
       const length = Math.hypot(moveX, moveY);
 
       if (length > 0) {
@@ -526,6 +629,9 @@ export function MazeBoard({
         gridHeight={gridHeight}
         target={[followWorldX, followWorldZ]}
         targetRef={currentPlayer ? localPositionRef : undefined}
+        firstPersonRef={firstPersonRef}
+        fpYawRef={fpYawRef}
+        fpPitchRef={fpPitchRef}
       />
       <fog attach="fog" args={["#030712", 20, 62]} />
 
@@ -580,6 +686,7 @@ export function MazeBoard({
             gridWidth={gridWidth}
             gridHeight={gridHeight}
             localPositionRef={sessionId === currentSessionId ? localPositionRef : undefined}
+            firstPersonRef={firstPersonRef}
           />
         ))}
 
