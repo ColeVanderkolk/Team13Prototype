@@ -55,6 +55,12 @@ interface ServerGameState {
     exitUnlocked: boolean;
     pressurePlatesRequired: number;
     pressurePlatesActivated: number;
+    plate0X: number;
+    plate0Y: number;
+    plate1X: number;
+    plate1Y: number;
+    plate2X: number;
+    plate2Y: number;
     totalScore: number;
     gameStarted: boolean;
     countdown: number;
@@ -77,6 +83,12 @@ interface GameStateLocal {
   exitUnlocked: boolean;
   pressurePlatesRequired: number;
   pressurePlatesActivated: number;
+  plate0X: number;
+  plate0Y: number;
+  plate1X: number;
+  plate1Y: number;
+  plate2X: number;
+  plate2Y: number;
   players: Map<string, PlayerState>;
   collectibles: Collectible[];
   totalScore: number;
@@ -103,6 +115,12 @@ const initialGameState: GameStateLocal = {
     exitUnlocked: true,
     pressurePlatesRequired: 0,
     pressurePlatesActivated: 0,
+    plate0X: -1,
+    plate0Y: -1,
+    plate1X: -1,
+    plate1Y: -1,
+    plate2X: -1,
+    plate2Y: -1,
     players: new Map(),
     collectibles: [],
     totalScore: 0,
@@ -229,6 +247,12 @@ const Index = () => {
           exitUnlocked: gameRoom.state.exitUnlocked ?? true,
           pressurePlatesRequired: gameRoom.state.pressurePlatesRequired || 0,
           pressurePlatesActivated: gameRoom.state.pressurePlatesActivated || 0,
+          plate0X: gameRoom.state.plate0X ?? -1,
+          plate0Y: gameRoom.state.plate0Y ?? -1,
+          plate1X: gameRoom.state.plate1X ?? -1,
+          plate1Y: gameRoom.state.plate1Y ?? -1,
+          plate2X: gameRoom.state.plate2X ?? -1,
+          plate2Y: gameRoom.state.plate2Y ?? -1,
           totalScore: gameRoom.state.totalScore || 0,
           gameStarted: gameRoom.state.gameStarted || false,
           stage: gameRoom.state.stage || 1,
@@ -484,7 +508,7 @@ const Index = () => {
           room?.leave();
           resultsReasonRef.current = "abandoned";
           setShowResults(true);
-        } } isSoloMode={initPayload?.soloMode || false} pressurePlatesRequired={gameState.pressurePlatesRequired} />
+        } } isSoloMode={initPayload?.soloMode || false} pressurePlatesRequired={gameState.pressurePlatesRequired} plate0X={gameState.plate0X} plate0Y={gameState.plate0Y} plate1X={gameState.plate1X} plate1Y={gameState.plate1Y} plate2X={gameState.plate2X} plate2Y={gameState.plate2Y} />
       {/* TODO: revert — temporarily showing overlay in solo mode */}
       {(gameState.countdown > 0 || showGo) && (() => {
         const from = 10;

@@ -62,7 +62,13 @@ interface MazeBoardProps {
   room: Client.Room | null;
   countdown?: number;
   currentSessionId?: string | null;
-  pressurePlatesRequired: number; // 0 in solo, 3 in multiplayer
+  pressurePlatesRequired: number;
+  plate0X: number;
+  plate0Y: number;
+  plate1X: number;
+  plate1Y: number;
+  plate2X: number;
+  plate2Y: number;
 }
 
 interface LocalPosition {
@@ -270,6 +276,12 @@ export function MazeBoard({
   countdown,
   currentSessionId,
   pressurePlatesRequired,
+  plate0X,
+  plate0Y,
+  plate1X,
+  plate1Y,
+  plate2X,
+  plate2Y,
 }: MazeBoardProps) {
   const hasMaze = gridWidth > 0 && gridHeight > 0 && mazeWalls.length === gridWidth * gridHeight;
   const boardWidth = gridWidth * CELL_SIZE;
@@ -572,10 +584,13 @@ export function MazeBoard({
         ))}
 
         <PressurePlates
-          exitX={exitX}
-          exitY={exitY}
-          exitWorldX={exitWorldX}
-          exitWorldZ={exitWorldZ}
+          plates={[
+            { gridX: plate0X, gridY: plate0Y },
+            { gridX: plate1X, gridY: plate1Y },
+            { gridX: plate2X, gridY: plate2Y },
+          ].filter(p => p.gridX >= 0)}
+          gridWidth={gridWidth}
+          gridHeight={gridHeight}
           players={players}
           pressurePlatesRequired={pressurePlatesRequired}
         />

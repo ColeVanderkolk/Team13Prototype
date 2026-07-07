@@ -2,17 +2,19 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber'; // runs code every frame inside the 3D canvas, like a game loop
 import * as THREE from 'three'; // the 3D library, needed for material stuff and DoubleSide
 
-// one object per plate — keeps the color, where it shows up on screen, and where the server checks for players all together
-// world = what you see in the game, grid = what the server uses to track player positions
-// the world offset is just the grid offset times 1.8 (the cell size), so they always match
-const PLATES = [
-    { color: "#38f8b6", worldDx: -0.45, worldDz: 0, gridDx: -0.25, gridDy: 0 }, // teal, player 1
-    { color: "#ff5a7a", worldDx:  0,    worldDz: 0, gridDx:  0,    gridDy: 0 }, // red, player 2 — sits right on the exit
-    { color: "#facc15", worldDx:  0.45, worldDz: 0, gridDx:  0.25, gridDy: 0 }, // yellow, player 3
-];
+const CELL_SIZE = 1.8;
+const PLATE_DETECT_RADIUS = 0.22; // how close a player has to be before the plate counts as activated
 
-// how close a player has to be before the plate counts as activated
-const PLATE_DETECT_RADIUS = 0.22;
+// plate colors match the player color order (sorted by sessionId alphabetically)
+const PLATE_COLORS = ["#38f8b6", "#ff5a7a", "#facc15"]; // teal, red, yellow
+
+// converts grid coordinates to 3D world position — same formula as MazeBoard
+function cellToWorld(gridWidth: number, gridHeight: number, x: number, y: number): [number, number] {
+    return [
+        (x - (gridWidth - 1) / 2) * CELL_SIZE,
+        (y - (gridHeight - 1) / 2) * CELL_SIZE,
+    ];
+}
 
 // a single plate — broken out into its own component because useFrame has to live inside a component
 // and each plate needs to animate on its own
@@ -20,7 +22,7 @@ function Plate({
     worldX,
     worldZ,
     color,
-    isActive, // true when someone is standing on this plate
+    isActive, // true when the assigned player is standing on this plate
 }: {
     worldX: number;
     worldZ: number;
@@ -28,132 +30,87 @@ function Plate({
     isActive: boolean;
 }) {
     // refs let us poke the material directly every frame instead of going through React
-    // doing it this way is way faster for animations
     const discRef = useRef<THREE.MeshBasicMaterial | null>(null);
     const ringRef = useRef<THREE.MeshBasicMaterial | null>(null);
-    const timeRef = useRef(0); // tracks how long this plate has been alive, used for the pulse math
+    const timeRef = useRef(0);
 
-    // this runs every frame — drives the breathing glow on active plates
+    // breathing glow when active, dim when waiting
     useFrame((_, delta) => {
-        timeRef.current += delta; // delta is seconds since last frame so the speed stays consistent
-
+        timeRef.current += delta;
         if (discRef.current) {
             discRef.current.opacity = isActive
-                ? 0.7 + Math.sin(timeRef.current * 3) * 0.15 // slowly pulses when active
-                : 0.2; // barely visible when nobody is on it
+                ? 0.7 + Math.sin(timeRef.current * 3) * 0.15
+                : 0.2;
         }
         if (ringRef.current) {
             ringRef.current.opacity = isActive
-                ? 0.85 + Math.sin(timeRef.current * 3) * 0.1 // ring pulses too, slightly less
-                : 0.5; // ring stays a bit more visible than the disc so players can see it as a hint
+                ? 0.85 + Math.sin(timeRef.current * 3) * 0.1
+                : 0.5;
         }
     });
 
     return (
         <group>
-            {/* the filled colored circle on the floor */}
-            {/* the rotation flips it flat — by default Three.js meshes stand upright */}
+            {/* filled colored disc on the floor */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[worldX, 0.05, worldZ]}>
                 <circleGeometry args={[0.36, 28]} />
-                <meshBasicMaterial
-                    ref={discRef}
-                    color={color}
-                    transparent
-                    opacity={isActive ? 0.85 : 0.2}
-                    side={THREE.DoubleSide}
-                />
+                <meshBasicMaterial ref={discRef} color={color} transparent opacity={isActive ? 0.85 : 0.2} side={THREE.DoubleSide} />
             </mesh>
 
-            {/* ring border around the disc, drawn just below it so it shows as an outline */}
+            {/* ring border around the disc */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[worldX, 0.04, worldZ]}>
                 <ringGeometry args={[0.36, 0.46, 28]} />
-                <meshBasicMaterial
-                    ref={ringRef}
-                    color={color}
-                    transparent
-                    opacity={isActive ? 0.95 : 0.5}
-                    side={THREE.DoubleSide}
-                />
+                <meshBasicMaterial ref={ringRef} color={color} transparent opacity={isActive ? 0.95 : 0.5} side={THREE.DoubleSide} />
             </mesh>
 
-            {/* colored glow light that only turns on when someone is standing on the plate */}
-            {isActive && (
-                <pointLight
-                    position={[worldX, 0.8, worldZ]}
-                    color={color}
-                    intensity={2.0}
-                    distance={2.5}
-                />
-            )}
+            {/* colored glow that only turns on when someone is standing on it */}
+            {isActive && <pointLight position={[worldX, 0.8, worldZ]} color={color} intensity={2.0} distance={2.5} />}
         </group>
     );
 }
 
 type PlayerPos = { x: number; y: number };
 
+type PlatePos = { gridX: number; gridY: number };
+
 type PressurePlatesProps = {
-    exitX: number;
-    exitY: number;
-    exitWorldX: number; // MazeBoard already converts exit grid coords to world coords, so we just take them
-    exitWorldZ: number;
+    plates: PlatePos[];       // actual grid positions of each plate, sent from the server
+    gridWidth: number;
+    gridHeight: number;
     players: Map<string, PlayerPos>;
-    pressurePlatesRequired: number; // 0 in solo, 3 in multiplayer
+    pressurePlatesRequired: number;
 };
 
-// renders all 3 pressure plates near the exit
-// MazeBoard calls this and passes in the exit position and player list
+// renders pressure plates at their actual maze positions
+// plates are placed randomly in the maze by the server each level
 export function PressurePlates({
-    exitX,
-    exitY,
-    exitWorldX,
-    exitWorldZ,
+    plates,
+    gridWidth,
+    gridHeight,
     players,
     pressurePlatesRequired,
 }: PressurePlatesProps) {
-    // sort players the same way the server does — alphabetical by sessionId
-    // so player 0 = teal, player 1 = red, player 2 = yellow
+    if (pressurePlatesRequired === 0 || plates.length === 0) return null;
+
+    // same sort order as the server — player 0 = teal plate, player 1 = red, player 2 = yellow
     const orderedPlayers = Array.from(players.entries())
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([_, p]) => p);
 
-    // solo mode — just the center plate, one player steps on it
-    if (pressurePlatesRequired === 1) {
-        const plate = PLATES[1];
-        const plateGridX = exitX + plate.gridDx;
-        const plateGridY = exitY + plate.gridDy;
-        const soloPlayer = orderedPlayers[0];
-        const isActive = soloPlayer
-            ? Math.hypot(soloPlayer.x - plateGridX, soloPlayer.y - plateGridY) < PLATE_DETECT_RADIUS
-            : false;
-        return (
-            <Plate
-                worldX={exitWorldX + plate.worldDx}
-                worldZ={exitWorldZ + plate.worldDz}
-                color={PLATES[0].color}
-                isActive={isActive}
-            />
-        );
-    }
-
     return (
         <>
-            {PLATES.map((plate, idx) => {
-                const plateGridX = exitX + plate.gridDx;
-                const plateGridY = exitY + plate.gridDy;
+            {plates.map((plate, idx) => {
+                const [worldX, worldZ] = cellToWorld(gridWidth, gridHeight, plate.gridX, plate.gridY);
+                const color = PLATE_COLORS[idx] ?? PLATE_COLORS[0];
 
+                // only the player at this index can light up this plate
                 const assignedPlayer = orderedPlayers[idx];
                 const isActive = assignedPlayer
-                    ? Math.hypot(assignedPlayer.x - plateGridX, assignedPlayer.y - plateGridY) < PLATE_DETECT_RADIUS
+                    ? Math.hypot(assignedPlayer.x - plate.gridX, assignedPlayer.y - plate.gridY) < PLATE_DETECT_RADIUS
                     : false;
 
                 return (
-                    <Plate
-                        key={idx}
-                        worldX={exitWorldX + plate.worldDx}
-                        worldZ={exitWorldZ + plate.worldDz}
-                        color={plate.color}
-                        isActive={isActive}
-                    />
+                    <Plate key={idx} worldX={worldX} worldZ={worldZ} color={color} isActive={isActive} />
                 );
             })}
         </>

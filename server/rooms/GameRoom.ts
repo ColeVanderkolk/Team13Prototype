@@ -33,7 +33,6 @@ export class GameRoom extends Room<GameState> {
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
     private readonly PLATE_RADIUS = 0.2;
-    private readonly PLATE_OFFSETS = [{ dx: -0.25, dy: 0 }, { dx: 0, dy: 0 }, { dx: 0.25, dy: 0 }];
 
     onCreate(options: any) {
         console.log("GameRoom created with options:", options, "| Room ID:", this.roomId);
@@ -327,59 +326,89 @@ export class GameRoom extends Room<GameState> {
     }
 
     private configureLevelObjective() {
-        if (this.isSoloMode) {
-            // solo mode — 1 plate to step on before the exit opens
-            this.state.pressurePlatesRequired = 1;
-            this.state.pressurePlatesActivated = 0;
-            this.state.exitUnlocked = false;
-        } else {
-            // multiplayer — all 3 players must stand on their plates at the same time
-            this.state.pressurePlatesRequired = 3;
-            this.state.pressurePlatesActivated = 0;
-            this.state.exitUnlocked = false;
+        // collect all cells that are far enough from start and exit to be plate candidates
+        const candidates: { x: number; y: number }[] = [];
+        for (let y = 0; y < this.state.gridHeight; y++) {
+            for (let x = 0; x < this.state.gridWidth; x++) {
+                const distFromStart = Math.abs(x - this.state.startX) + Math.abs(y - this.state.startY);
+                const distFromExit = Math.abs(x - this.state.exitX) + Math.abs(y - this.state.exitY);
+                if (distFromStart < 3 || distFromExit < 3) continue;
+                candidates.push({ x, y });
+            }
         }
+
+        // shuffle so plate positions are random each level
+        for (let i = candidates.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+
+        const needed = this.isSoloMode ? 1 : 3;
+        this.state.pressurePlatesRequired = needed;
+        this.state.pressurePlatesActivated = 0;
+        this.state.exitUnlocked = false;
+
+        // pick plates that are spread out from each other (at least 3 cells apart)
+        const picks: { x: number; y: number }[] = [];
+        for (const c of candidates) {
+            if (picks.every(p => Math.abs(p.x - c.x) + Math.abs(p.y - c.y) >= 3)) {
+                picks.push(c);
+                if (picks.length === needed) break;
+            }
+        }
+        // fallback if maze is too small to find spread candidates
+        for (let i = picks.length; i < needed && i < candidates.length; i++) {
+            picks.push(candidates[i]);
+        }
+
+        this.state.plate0X = picks[0]?.x ?? this.state.exitX;
+        this.state.plate0Y = picks[0]?.y ?? this.state.exitY;
+        this.state.plate1X = picks[1]?.x ?? -1;
+        this.state.plate1Y = picks[1]?.y ?? -1;
+        this.state.plate2X = picks[2]?.x ?? -1;
+        this.state.plate2Y = picks[2]?.y ?? -1;
     }
 
     private checkPressurePlates() {
-    // already unlocked — no need to keep checking
-    if (this.state.exitUnlocked) return;
-    if (this.state.pressurePlatesRequired === 0) return;
+        if (this.state.exitUnlocked) return;
+        if (this.state.pressurePlatesRequired === 0) return;
 
-    let activated = 0;
+        // build the list of active plate positions from state
+        const platePositions = [
+            { x: this.state.plate0X, y: this.state.plate0Y },
+            { x: this.state.plate1X, y: this.state.plate1Y },
+            { x: this.state.plate2X, y: this.state.plate2Y },
+        ].slice(0, this.state.pressurePlatesRequired);
 
-    if (this.isSoloMode) {
-        // solo — the one player just needs to stand on the center plate
-        const player = Array.from(this.state.players.values())[0];
-        if (player) {
-            const plateX = this.state.exitX + this.PLATE_OFFSETS[1].dx;
-            const plateY = this.state.exitY + this.PLATE_OFFSETS[1].dy;
-            if (Math.hypot(player.x - plateX, player.y - plateY) < this.PLATE_RADIUS) {
-                activated = 1;
+        let activated = 0;
+
+        if (this.isSoloMode) {
+            const player = Array.from(this.state.players.values())[0];
+            if (player && platePositions[0]) {
+                const { x: plateX, y: plateY } = platePositions[0];
+                if (Math.hypot(player.x - plateX, player.y - plateY) < this.PLATE_RADIUS) {
+                    activated = 1;
+                }
+            }
+        } else {
+            // sort players the same way the client does — player 0 = teal plate, etc.
+            const ordered = Array.from(this.state.players.entries())
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([_, p]) => p);
+
+            for (let i = 0; i < platePositions.length && i < ordered.length; i++) {
+                const { x: plateX, y: plateY } = platePositions[i];
+                if (Math.hypot(ordered[i].x - plateX, ordered[i].y - plateY) < this.PLATE_RADIUS) {
+                    activated++;
+                }
             }
         }
-    } else {
-        // multiplayer — sort players the same way the client does (by sessionId alphabetically)
-        // so player 0 = teal plate, player 1 = red plate, player 2 = yellow plate
-        const ordered = Array.from(this.state.players.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([_, p]) => p);
 
-        for (let i = 0; i < this.PLATE_OFFSETS.length && i < ordered.length; i++) {
-            const player = ordered[i];
-            const plateX = this.state.exitX + this.PLATE_OFFSETS[i].dx;
-            const plateY = this.state.exitY + this.PLATE_OFFSETS[i].dy;
-            if (Math.hypot(player.x - plateX, player.y - plateY) < this.PLATE_RADIUS) {
-                activated++;
-            }
+        this.state.pressurePlatesActivated = activated;
+        if (activated >= this.state.pressurePlatesRequired) {
+            this.advanceLevel();
         }
     }
-
-    this.state.pressurePlatesActivated = activated;
-
-    if (activated >= this.state.pressurePlatesRequired) {
-        this.state.exitUnlocked = true;
-    }
-}
 
     private advanceLevel() {
         const nextStage = this.state.stage + 1;

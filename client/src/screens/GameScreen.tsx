@@ -103,6 +103,12 @@ interface GameScreenProps {
     countdown?: number;
     onGameAbandoned?: ()=> void;
     pressurePlatesRequired: number;
+    plate0X: number;
+    plate0Y: number;
+    plate1X: number;
+    plate1Y: number;
+    plate2X: number;
+    plate2Y: number;
 }
 
 export const GameScreen = ({
@@ -126,6 +132,12 @@ export const GameScreen = ({
     countdown,
     onGameAbandoned,
     pressurePlatesRequired,
+    plate0X,
+    plate0Y,
+    plate1X,
+    plate1Y,
+    plate2X,
+    plate2Y,
 }: GameScreenProps) => {
     const pendingInputsRef = useRef<Map<number, { x: number, y: number }>>(new Map());
     const seqCounterRef = useRef(0);
@@ -532,6 +544,12 @@ export const GameScreen = ({
           countdown={countdown}
           currentSessionId={room?.sessionId}
           pressurePlatesRequired={pressurePlatesRequired}
+          plate0X={plate0X}
+          plate0Y={plate0Y}
+          plate1X={plate1X}
+          plate1Y={plate1Y}
+          plate2X={plate2X}
+          plate2Y={plate2Y}
         />
 
         <DeferredEffects />

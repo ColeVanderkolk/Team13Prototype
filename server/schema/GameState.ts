@@ -38,6 +38,13 @@ export class GameState extends Schema {
 
     @type("number") pressurePlatesActivated: number = 0;
 
+    @type("number") plate0X: number = -1;
+    @type("number") plate0Y: number = -1;
+    @type("number") plate1X: number = -1;
+    @type("number") plate1Y: number = -1;
+    @type("number") plate2X: number = -1;
+    @type("number") plate2Y: number = -1;
+
     @type([Collectible]) collectibles = new ArraySchema<Collectible>();
 
     @type("number") totalScore: number = 0;
