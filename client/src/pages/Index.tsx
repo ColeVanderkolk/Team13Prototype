@@ -69,6 +69,8 @@ interface ServerGameState {
     collectibles: Map<string, Collectible>;
     stage: number;
     seed: number;
+    playerCount: number;
+    requiredPlayers: number;
 }
 
 // Batched game state — updated atomically via reducer
@@ -99,9 +101,13 @@ interface GameStateLocal {
   countdown: number;
   isGameOver: boolean;
   seed: number;
+  playerCount: number;
+  requiredPlayers: number;
 }
 
-type GameAction = { type:"SYNC_STATE"; payload: GameStateLocal };
+type GameAction = 
+| { type:"SYNC_STATE"; payload: GameStateLocal }
+| { type: "SET_PLAYER_COUNT"; payload: { count: number; required: number }};
 
 // TODO: set the values according to actual game, rather than placeholder values
 const initialGameState: GameStateLocal = {
@@ -130,19 +136,27 @@ const initialGameState: GameStateLocal = {
     timeRemaining: 30 * 60,
     countdown: 0,
     isGameOver: false,
-    seed: 0
+    seed: 0,
+    playerCount: 0,
+    requiredPlayers: 3
 };
 
 function gameReducer(_state: GameStateLocal, action: GameAction): GameStateLocal {
   switch (action.type) {
     case "SYNC_STATE":
       return action.payload;
+    case "SET_PLAYER_COUNT":
+      return {
+        ..._state,
+        playerCount: action.payload.count,
+        requiredPlayers: action.payload.required,
+      }
     default:
       return _state;
   }
 }
 
-type Phase = "connecting" | "game";
+type Phase = "connecting" | "waiting" | "game";
 
 const Index = () => {
   const location = useLocation();
@@ -262,7 +276,9 @@ const Index = () => {
           isGameOver: gameRoom.state.isGameOver || false,
           timeRemaining: gameRoom.state.timeRemaining ?? 30 * 60,
           stageThresholds: [],
-          countdown: gameRoom.state.countdown || 0
+          countdown: gameRoom.state.countdown || 0,
+          playerCount: 0,
+          requiredPlayers: 3
       },
     });
   }, []);
@@ -304,22 +320,9 @@ const Index = () => {
       });
 
 
-    //   gameRoom.onMessage(
-    //     "milestoneUnlocked",
-    //     (data: { color: PlayerColor; type: string; name: string | null; description: string | null }) => {
-    //       setUnlockedDuringGame((prev) => {
-    //         const existing = prev[data.color] ?? [];
-    //         if (existing.some((m) => m.type === data.type)) return prev;
-    //         const next: UnlockedMilestone = {
-    //           type: data.type,
-    //           name: data.name,
-    //           description: data.description,
-    //         };
-    //         return { ...prev, [data.color]: [...existing, next] };
-    //       });
-    //     },
-    //   );
-
+      gameRoom.onMessage("playerCountUpdate", (data: { count: number, required: number }) => {
+        dispatch({ type: "SET_PLAYER_COUNT", payload: data });
+      });
       return runSync;
     }
 
@@ -422,7 +425,7 @@ const Index = () => {
         gameRoom.onStateChange(() => {
           if (!initialised) {
             initialised = true;
-            setPhase("game");
+            setPhase(initPayload?.soloMode ? "game" : "waiting");
           }
         });
       } catch (e) {
@@ -442,7 +445,11 @@ const Index = () => {
   // Transition from connecting to game when gameStarted
   useEffect(() => {
     if (gameState.gameStarted && phase === "connecting" && room) {
-      setPhase("game");
+      setPhase(initPayload?.soloMode ? "game" : "waiting");
+    }
+
+    if (gameState.gameStarted && phase === "waiting") {
+      setPhase("game")
     }
   }, [gameState.gameStarted, phase, room]);
 
@@ -464,6 +471,31 @@ const Index = () => {
           )}
         </div>
       </div>
+    );
+  }
+
+  console.log("Current phase", phase);
+  
+  if (phase === "waiting") {
+    return (
+        <div className="w-full h-screen bg-canvas flex items-center justify-center">
+            <div className="flex flex-col items-center gap-6 text-center">
+                <div
+                    className="h-10 w-10 animate-spin rounded-full border-2 border-t-transparent"
+                    style={{ borderColor: "rgba(0, 149, 255, 0.3)", borderTopColor: "transparent" }}
+                />
+                <p className="font-montreal text-[0.6875rem] uppercase tracking-[0.06em] text-sky-200/90">
+                    Waiting for players...
+                </p>
+                <p className="text-white text-2xl font-bold">
+                    {gameState.playerCount} / {gameState.requiredPlayers}
+                </p>
+                <div className="text-slate-400 text-sm">
+                    <p>Room code</p>
+                    <p className="text-white font-mono text-lg">{room?.roomId}</p>
+                </div>
+            </div>
+        </div>
     );
   }
 

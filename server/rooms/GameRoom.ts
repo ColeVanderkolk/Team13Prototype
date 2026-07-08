@@ -80,12 +80,26 @@ export class GameRoom extends Room<GameState> {
             this.initializeGame();
             this.startGameplay();
         } 
+
+        if (!this.isSoloMode) {
+            this.broadcast("playerCountUpdate", {
+                count: this.state.players.size,
+                required: 3,
+            });
+        }
     }
 
     onLeave(client: Client, consented: boolean) { 
         console.log(client.sessionId, "left!", consented ? "(consented)" : "(disconnected)") 
         this.state.players.delete(client.sessionId);
         this.lastAcceptedAt.delete(client.sessionId);
+
+        if (!this.isSoloMode) {
+            this.broadcast("playerCountUpdate", {
+                count: this.state.players.size,
+                required: 3,
+            });
+        }
     }
 
     async onDispose() {
