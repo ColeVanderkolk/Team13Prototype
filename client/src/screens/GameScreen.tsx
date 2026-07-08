@@ -6,13 +6,11 @@ import type { ErrorInfo, ReactNode } from "react";
 import { Info, Settings, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GameControls } from "@/components/game/GameControls";
-import { NebulaBackdrop } from "@/components/game/NebulaBackdrop";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { NoiseFieldOverlay, type NoiseFieldHandle } from "@/components/game/NoiseFieldOverlay";
 import { StageAnnouncement } from "@/components/game/StageAnnouncement";
 import { DevStageControls } from "@/components/game/DevStageControls";
 import { MazeBoard } from "@/components/game/MazeBoard";
-import * as THREE from "three";
 
 // Error boundary to catch silent Canvas/Three.js crashes
 class CanvasErrorBoundary extends Component<
@@ -526,7 +524,6 @@ export const GameScreen = ({
           });
         }}
       >
-        <NebulaBackdrop />
 
         <MazeBoard
           gridWidth={gridWidth}
