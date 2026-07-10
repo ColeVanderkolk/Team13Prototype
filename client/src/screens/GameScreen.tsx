@@ -107,6 +107,8 @@ interface GameScreenProps {
     plate1Y: number;
     plate2X: number;
     plate2Y: number;
+    obstacleType: string;
+    playersAtExit: number;
 }
 
 export const GameScreen = ({
@@ -136,6 +138,8 @@ export const GameScreen = ({
     plate1Y,
     plate2X,
     plate2Y,
+    obstacleType,
+    playersAtExit,
 }: GameScreenProps) => {
     const pendingInputsRef = useRef<Map<number, { x: number, y: number }>>(new Map());
     const seqCounterRef = useRef(0);
@@ -483,6 +487,16 @@ export const GameScreen = ({
         </div>
       </div>
 
+      {/* Exit waiting indicator — only shows when exit is unlocked and someone is there */}
+      {exitUnlocked && playersAtExit > 0 && (
+        <div className="absolute bottom-28 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-none border border-yellow-400/40 bg-canvas/70 px-4 py-2 text-center backdrop-blur-sm">
+          <p className="font-montreal text-[9px] uppercase tracking-[0.12em] text-yellow-300/80">At exit</p>
+          <p className="mt-0.5 font-montreal text-lg font-bold leading-none text-yellow-300">
+            {playersAtExit} / {players.size}
+          </p>
+        </div>
+      )}
+
       {/* Timer Display - Bottom Center (polar blue chrome) */}
       <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
         <div
@@ -547,6 +561,8 @@ export const GameScreen = ({
           plate1Y={plate1Y}
           plate2X={plate2X}
           plate2Y={plate2Y}
+          obstacleType={obstacleType}
+          playersAtExit={playersAtExit}
         />
 
         <DeferredEffects />

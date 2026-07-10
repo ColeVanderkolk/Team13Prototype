@@ -61,6 +61,8 @@ interface ServerGameState {
     plate1Y: number;
     plate2X: number;
     plate2Y: number;
+    obstacleType: string;
+    playersAtExit: number;
     totalScore: number;
     gameStarted: boolean;
     countdown: number;
@@ -91,6 +93,8 @@ interface GameStateLocal {
   plate1Y: number;
   plate2X: number;
   plate2Y: number;
+  obstacleType: string;
+  playersAtExit: number;
   players: Map<string, PlayerState>;
   collectibles: Collectible[];
   totalScore: number;
@@ -127,6 +131,8 @@ const initialGameState: GameStateLocal = {
     plate1Y: -1,
     plate2X: -1,
     plate2Y: -1,
+    obstacleType: "pressurePlates",
+    playersAtExit: 0,
     players: new Map(),
     collectibles: [],
     totalScore: 0,
@@ -267,6 +273,8 @@ const Index = () => {
           plate1Y: gameRoom.state.plate1Y ?? -1,
           plate2X: gameRoom.state.plate2X ?? -1,
           plate2Y: gameRoom.state.plate2Y ?? -1,
+          obstacleType: gameRoom.state.obstacleType || "pressurePlates",
+          playersAtExit: gameRoom.state.playersAtExit || 0,
           totalScore: gameRoom.state.totalScore || 0,
           gameStarted: gameRoom.state.gameStarted || false,
           stage: gameRoom.state.stage || 1,
@@ -540,7 +548,7 @@ const Index = () => {
           room?.leave();
           resultsReasonRef.current = "abandoned";
           setShowResults(true);
-        } } isSoloMode={initPayload?.soloMode || false} pressurePlatesRequired={gameState.pressurePlatesRequired} plate0X={gameState.plate0X} plate0Y={gameState.plate0Y} plate1X={gameState.plate1X} plate1Y={gameState.plate1Y} plate2X={gameState.plate2X} plate2Y={gameState.plate2Y} />
+        } } isSoloMode={initPayload?.soloMode || false} pressurePlatesRequired={gameState.pressurePlatesRequired} plate0X={gameState.plate0X} plate0Y={gameState.plate0Y} plate1X={gameState.plate1X} plate1Y={gameState.plate1Y} plate2X={gameState.plate2X} plate2Y={gameState.plate2Y} obstacleType={gameState.obstacleType} playersAtExit={gameState.playersAtExit} />
       {/* TODO: revert — temporarily showing overlay in solo mode */}
       {(gameState.countdown > 0 || showGo) && (() => {
         const from = 10;

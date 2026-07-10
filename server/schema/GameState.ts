@@ -45,6 +45,10 @@ export class GameState extends Schema {
     @type("number") plate2X: number = -1;
     @type("number") plate2Y: number = -1;
 
+    @type("string") obstacleType: string = "pressurePlates";
+
+    @type("number") playersAtExit: number = 0;
+
     @type([Collectible]) collectibles = new ArraySchema<Collectible>();
 
     @type("number") totalScore: number = 0;

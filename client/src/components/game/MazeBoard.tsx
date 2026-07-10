@@ -76,6 +76,8 @@ interface MazeBoardProps {
   plate1Y: number;
   plate2X: number;
   plate2Y: number;
+  obstacleType: string;
+  playersAtExit: number;
 }
 
 interface LocalPosition {
@@ -327,6 +329,8 @@ export function MazeBoard({
   plate1Y,
   plate2X,
   plate2Y,
+  obstacleType,
+  playersAtExit,
 }: MazeBoardProps) {
   const hasMaze = gridWidth > 0 && gridHeight > 0 && mazeWalls.length === gridWidth * gridHeight;
   const boardWidth = gridWidth * CELL_SIZE;
@@ -427,6 +431,8 @@ export function MazeBoard({
     if (localX < -edge && (walls & wallForDirection("left")) !== 0) return false;
     if (localY > edge && (walls & wallForDirection("down")) !== 0) return false;
     if (localY < -edge && (walls & wallForDirection("up")) !== 0) return false;
+
+    if (!exitUnlocked && Math.hypot(x - exitX, y - exitY) < 0.5) return false;
 
     return true;
   };
@@ -638,7 +644,7 @@ export function MazeBoard({
       <ambientLight intensity={0.72} />
       <directionalLight position={[8, 14, 10]} intensity={2.1} castShadow />
       {exitUnlocked && (
-        <pointLight position={[exitWorldX, 2.4, exitWorldZ]} color="#facc15" intensity={2.2} distance={8} />
+        <pointLight position={[exitWorldX, 2.4, exitWorldZ]} color="#facc15" intensity={2.2 + playersAtExit * 1.5} distance={8 + playersAtExit * 2} />
       )}
 
       <group>
@@ -653,6 +659,17 @@ export function MazeBoard({
           <ringGeometry args={[0.28, 0.54, 36]} />
           <meshBasicMaterial color="#38f8b6" transparent opacity={0.72} side={THREE.DoubleSide} />
         </mesh>
+
+        {/* barrier wall — sits at the exit and blocks it until the obstacle is solved */}
+        {!exitUnlocked && (
+          <>
+            <mesh position={[exitWorldX, WALL_HEIGHT / 2, exitWorldZ]}>
+              <boxGeometry args={[CELL_SIZE * 0.82, WALL_HEIGHT, CELL_SIZE * 0.82]} />
+              <meshStandardMaterial color="#7c3aed" emissive="#4c1d95" emissiveIntensity={0.7} roughness={0.25} metalness={0.1} />
+            </mesh>
+            <pointLight position={[exitWorldX, 1.5, exitWorldZ]} color="#7c3aed" intensity={1.8} distance={5} />
+          </>
+        )}
 
         {exitUnlocked && (
           <>
@@ -690,17 +707,19 @@ export function MazeBoard({
           />
         ))}
 
-        <PressurePlates
-          plates={[
-            { gridX: plate0X, gridY: plate0Y },
-            { gridX: plate1X, gridY: plate1Y },
-            { gridX: plate2X, gridY: plate2Y },
-          ].filter(p => p.gridX >= 0)}
-          gridWidth={gridWidth}
-          gridHeight={gridHeight}
-          players={players}
-          pressurePlatesRequired={pressurePlatesRequired}
-        />
+        {obstacleType === "pressurePlates" && (
+          <PressurePlates
+            plates={[
+              { gridX: plate0X, gridY: plate0Y },
+              { gridX: plate1X, gridY: plate1Y },
+              { gridX: plate2X, gridY: plate2Y },
+            ].filter(p => p.gridX >= 0)}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            players={players}
+            pressurePlatesRequired={pressurePlatesRequired}
+          />
+        )}
       </group>
     </>
   );

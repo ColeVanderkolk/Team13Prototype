@@ -250,10 +250,7 @@ export class GameRoom extends Room<GameState> {
         player.y = y;
         this.lastAcceptedAt.set(client.sessionId, Date.now());
         this.checkPressurePlates();
-
-        if (this.canAdvanceLevel(player)) {
-            this.advanceLevel();
-        }
+        this.checkExitAdvance();
     }
 
     private buildMazeForStage(stage: number, seed = this.createSeed()) {
@@ -328,6 +325,11 @@ export class GameRoom extends Room<GameState> {
         if (localY > edge && (walls & wallForDirection("down")) !== 0) return false;
         if (localY < -edge && (walls & wallForDirection("up")) !== 0) return false;
 
+        // treat the exit cell as a solid wall until the obstacle is solved
+        if (!this.state.exitUnlocked && Math.hypot(x - this.state.exitX, y - this.state.exitY) < 0.5) {
+            return false;
+        }
+
         return true;
     }
 
@@ -335,11 +337,27 @@ export class GameRoom extends Room<GameState> {
         return Math.hypot(player.x - this.state.exitX, player.y - this.state.exitY) < 0.35;
     }
 
-    private canAdvanceLevel(player: Player) {
-        return this.state.exitUnlocked && this.isAtExit(player);
+    private checkExitAdvance() {
+        if (!this.state.exitUnlocked) {
+            this.state.playersAtExit = 0;
+            return;
+        }
+        const players = Array.from(this.state.players.values());
+        if (players.length === 0) return;
+
+        this.state.playersAtExit = players.filter(p => this.isAtExit(p)).length;
+
+        if (this.state.playersAtExit >= players.length) {
+            this.advanceLevel();
+        }
     }
 
     private configureLevelObjective() {
+        // pick one obstacle type randomly from the pool each level
+        // add more strings here later when new obstacle types are built
+        const OBSTACLE_POOL = ["pressurePlates"];
+        this.state.obstacleType = OBSTACLE_POOL[Math.floor(Math.random() * OBSTACLE_POOL.length)];
+
         // collect all cells that are far enough from start and exit to be plate candidates
         const candidates: { x: number; y: number }[] = [];
         for (let y = 0; y < this.state.gridHeight; y++) {
@@ -361,6 +379,7 @@ export class GameRoom extends Room<GameState> {
         this.state.pressurePlatesRequired = needed;
         this.state.pressurePlatesActivated = 0;
         this.state.exitUnlocked = false;
+        this.state.playersAtExit = 0;
 
         // pick plates that are spread out from each other (at least 3 cells apart)
         const picks: { x: number; y: number }[] = [];
@@ -420,7 +439,7 @@ export class GameRoom extends Room<GameState> {
 
         this.state.pressurePlatesActivated = activated;
         if (activated >= this.state.pressurePlatesRequired) {
-            this.advanceLevel();
+            this.state.exitUnlocked = true;
         }
     }
 
