@@ -1,7 +1,7 @@
 import { HudCornerLs, POLAR_HUD } from "@/components/ui/polar-chrome";
 import { Canvas, useThree } from "@react-three/fiber";
 import * as Client from "colyseus.js";
-import { Component, useRef, useEffect, useState } from "react";
+import { Component, useRef, useEffect, useState, type MutableRefObject } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { Info, Settings, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ import { NoiseFieldOverlay, type NoiseFieldHandle } from "@/components/game/Nois
 import { StageAnnouncement } from "@/components/game/StageAnnouncement";
 import { DevStageControls } from "@/components/game/DevStageControls";
 import { MazeBoard } from "@/components/game/MazeBoard";
+import { Compass } from "@/components/game/Compass";
 
 // Error boundary to catch silent Canvas/Three.js crashes
 class CanvasErrorBoundary extends Component<
@@ -151,6 +152,7 @@ export const GameScreen = ({
     // const SPRINT_SPEED = 10.5; 
 
     const noiseFieldRef = useRef<NoiseFieldHandle>(null);
+    const compassYawRef = useRef<number | null>(null);
 
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsExiting, setSettingsExiting] = useState(false);
@@ -563,12 +565,17 @@ export const GameScreen = ({
           plate2Y={plate2Y}
           obstacleType={obstacleType}
           playersAtExit={playersAtExit}
+          compassYawRef={compassYawRef}
         />
 
         <DeferredEffects />
 
       </Canvas>
       </CanvasErrorBoundary>
+
+      <div className="absolute bottom-4 left-4 z-10 pointer-events-none">
+        <Compass compassYawRef={compassYawRef} />
+      </div>
 
       {/* Overlays — AFTER R3F Canvas, no wrapper divs, canvases use mix-blend-mode:screen */}
       <NoiseFieldOverlay ref={noiseFieldRef} resolutionScale={0.8} />

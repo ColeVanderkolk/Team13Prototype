@@ -78,6 +78,7 @@ interface MazeBoardProps {
   plate2Y: number;
   obstacleType: string;
   playersAtExit: number;
+  compassYawRef: MutableRefObject<number | null>;
 }
 
 interface LocalPosition {
@@ -331,6 +332,7 @@ export function MazeBoard({
   plate2Y,
   obstacleType,
   playersAtExit,
+  compassYawRef,
 }: MazeBoardProps) {
   const hasMaze = gridWidth > 0 && gridHeight > 0 && mazeWalls.length === gridWidth * gridHeight;
   const boardWidth = gridWidth * CELL_SIZE;
@@ -556,6 +558,8 @@ export function MazeBoard({
   ]);
 
   useFrame((state, delta) => {
+    compassYawRef.current = firstPersonRef.current ? fpYawRef.current : null;
+
     if (!room || !currentPlayer || !hasMaze || countdown > 0) return;
 
     const pressed = pressedKeysRef.current;
