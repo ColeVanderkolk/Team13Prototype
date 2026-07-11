@@ -34,6 +34,7 @@ export class GameState extends Schema {
 
     @type("boolean") exitUnlocked: boolean = true;
 
+    // pressure plates
     @type("number") pressurePlatesRequired: number = 0;
 
     @type("number") pressurePlatesActivated: number = 0;
@@ -46,6 +47,20 @@ export class GameState extends Schema {
     @type("number") plate2Y: number = -1;
 
     @type("string") obstacleType: string = "pressurePlates";
+
+    // keys
+    @type("number") keysRequired: number = 0;
+
+    @type("boolean") allKeysCollected: boolean = false;
+    @type("number") keysCollectedMask: number = 0; 
+
+    @type("number") key0X: number = -1;
+    @type("number") key0Y: number = -1;
+    @type("number") key1X: number = -1;
+    @type("number") key1Y: number = -1;
+    @type("number") key2X: number = -1;
+    @type("number") key2Y: number = -1;
+
 
     @type("number") playersAtExit: number = 0;
 

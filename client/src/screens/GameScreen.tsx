@@ -101,6 +101,7 @@ interface GameScreenProps {
     isDevMode: boolean;
     countdown?: number;
     onGameAbandoned?: ()=> void;
+
     pressurePlatesRequired: number;
     plate0X: number;
     plate0Y: number;
@@ -108,6 +109,17 @@ interface GameScreenProps {
     plate1Y: number;
     plate2X: number;
     plate2Y: number;
+
+    keysRequired: number
+    key0X: number;
+    key0Y: number;
+    key1X: number;
+    key1Y: number;
+    key2X: number;
+    key2Y: number;
+    allKeysCollected: boolean;
+    keysCollectedMask: number; 
+    
     obstacleType: string;
     playersAtExit: number;
 }
@@ -132,6 +144,7 @@ export const GameScreen = ({
     isDevMode,
     countdown,
     onGameAbandoned,
+
     pressurePlatesRequired,
     plate0X,
     plate0Y,
@@ -139,6 +152,17 @@ export const GameScreen = ({
     plate1Y,
     plate2X,
     plate2Y,
+
+    keysRequired,
+    key0X,
+    key0Y,
+    key1X,
+    key1Y,
+    key2X,
+    key2Y,
+    allKeysCollected,
+    keysCollectedMask,
+
     obstacleType,
     playersAtExit,
 }: GameScreenProps) => {
@@ -563,6 +587,15 @@ export const GameScreen = ({
           plate1Y={plate1Y}
           plate2X={plate2X}
           plate2Y={plate2Y}
+          keysRequired={keysRequired}
+          key0X={key0X}
+          key0Y={key0Y}
+          key1X={key1X}
+          key1Y={key1Y}
+          key2X={key2X}
+          key2Y={key2Y}
+          allKeysCollected={allKeysCollected}
+          keysCollectedMask={keysCollectedMask}
           obstacleType={obstacleType}
           playersAtExit={playersAtExit}
           compassYawRef={compassYawRef}

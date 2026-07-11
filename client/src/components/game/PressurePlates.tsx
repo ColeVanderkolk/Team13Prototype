@@ -79,6 +79,8 @@ type PressurePlatesProps = {
     gridHeight: number;
     players: Map<string, PlayerPos>;
     pressurePlatesRequired: number;
+    obstacleType: string;
+    keysCollectedMask: number;
 };
 
 // renders pressure plates at their actual maze positions
@@ -89,6 +91,8 @@ export function PressurePlates({
     gridHeight,
     players,
     pressurePlatesRequired,
+    obstacleType,
+    keysCollectedMask
 }: PressurePlatesProps) {
     if (pressurePlatesRequired === 0 || plates.length === 0) return null;
 
@@ -105,12 +109,24 @@ export function PressurePlates({
 
                 // only the player at this index can light up this plate
                 const assignedPlayer = orderedPlayers[idx];
-                const isActive = assignedPlayer
+                const isOnPlate = assignedPlayer
                     ? Math.hypot(assignedPlayer.x - plate.gridX, assignedPlayer.y - plate.gridY) < PLATE_DETECT_RADIUS
                     : false;
 
+                const hasKey = obstacleType === "keys"
+                    ? (keysCollectedMask & (1 << idx)) !== 0 
+                    : true; 
+                
+                const isActive = isOnPlate && hasKey; 
+
                 return (
-                    <Plate key={idx} worldX={worldX} worldZ={worldZ} color={color} isActive={isActive} />
+                    <Plate 
+                        key={idx}
+                        worldX={worldX} 
+                        worldZ={worldZ} 
+                        color={color} 
+                        isActive={isActive} 
+                    />
                 );
             })}
         </>

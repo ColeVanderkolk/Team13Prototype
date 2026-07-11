@@ -42,16 +42,16 @@ export class GameRoom extends Room<GameState> {
         this.isDevMode = options?.devMode === true;
         this.setPatchRate(1000 / 60);
 
-        if (this.isSoloMode) {
-            this.buildMazeForStage(1);
-        }
-
         this.onMessage("position", (client, message: PositionMessage) => {
             this.handlePosition(client, message);
         });
 
         this.onMessage("collect", (client, message: CollectMessage) => {
             this.handleCollect(client, message);
+        });
+
+        this.onMessage("collectKey", (client, message: {index?: number}) => {
+            this.handleCollectKey(client, message);
         });
 
         this.onMessage("devStageUp", (client) => {
@@ -339,9 +339,28 @@ export class GameRoom extends Room<GameState> {
 
     private checkExitAdvance() {
         if (!this.state.exitUnlocked) {
+            if (this.state.obstacleType === "keys") {
+                if (!this.state.allKeysCollected) {
+                    this.state.playersAtExit = 0;
+                    return;
+                }
+
+                const players = Array.from(this.state.players.values());
+                if (players.length === 0) return;
+                this.state.playersAtExit = players.filter(p => this.isAtExit(p)).length;
+                if (this.state.playersAtExit >= players.length) {
+                    this.state.exitUnlocked = true;
+                }
+            return;
+
+            }
+
+
             this.state.playersAtExit = 0;
             return;
         }
+
+        // exit already unlocked - if all players there, advance
         const players = Array.from(this.state.players.values());
         if (players.length === 0) return;
 
@@ -353,53 +372,106 @@ export class GameRoom extends Room<GameState> {
     }
 
     private configureLevelObjective() {
+        // reset all obstacle states
+        this.state.allKeysCollected = false;
+        this.state.keysCollectedMask = 0;
+        this.state.keysRequired = 0;
+        this.state.pressurePlatesRequired = 0;
+        this.state.pressurePlatesActivated = 0;
+        this.state.key0X = -1; this.state.key0Y = -1;
+        this.state.key1X = -1; this.state.key1Y = -1;
+        this.state.key2X = -1; this.state.key2Y = -1;
+        this.state.plate0X = -1; this.state.plate0Y = -1;
+        this.state.plate1X = -1; this.state.plate1Y = -1;
+        this.state.plate2X = -1; this.state.plate2Y = -1;
+        this.state.exitUnlocked = false;
+        this.state.playersAtExit = 0;
+
         // pick one obstacle type randomly from the pool each level
         // add more strings here later when new obstacle types are built
-        const OBSTACLE_POOL = ["pressurePlates"];
+        const OBSTACLE_POOL = ["pressurePlates", "keys"];
         this.state.obstacleType = OBSTACLE_POOL[Math.floor(Math.random() * OBSTACLE_POOL.length)];
+        console.log("obstacleType set to:", this.state.obstacleType);
 
+        const needed = this.isSoloMode ? 1 : 3;
+        this.state.pressurePlatesActivated = 0;
+        this.state.exitUnlocked = false;
+        this.state.playersAtExit = 0;
+
+        if (this.state.obstacleType === "pressurePlates") {
+            this.state.pressurePlatesRequired = needed;
+            const picks = this.pickSpreadCells(needed);
+
+            this.state.plate0X = picks[0]?.x ?? this.state.exitX; this.state.plate0Y = picks[0]?.y ?? this.state.exitY;
+            this.state.plate1X = picks[1]?.x ?? -1; this.state.plate1Y = picks[1]?.y ?? -1;
+            this.state.plate2X = picks[2]?.x ?? -1; this.state.plate2Y = picks[2]?.y ?? -1;
+        } else if (this.state.obstacleType === "keys") {
+            this.state.keysRequired = needed; 
+            this.state.pressurePlatesRequired = needed; 
+
+            const picks = this.pickSpreadCells(needed * 2);
+
+            if (picks.length < needed) {
+                console.warn("Not enough maze cells to place obstacles - skipping");
+                this.state.exitUnlocked = true; 
+                return;
+            }
+
+            const keyPicks = picks.slice(0, needed);
+            const platePicks = picks.slice(needed);
+
+            this.state.key0X = keyPicks[0]?.x ?? -1; this.state.key0Y = keyPicks[0]?.y ?? -1;
+            this.state.key1X = keyPicks[1]?.x ?? -1; this.state.key1Y = keyPicks[1]?.y ?? -1;
+            this.state.key2X = keyPicks[2]?.x ?? -1; this.state.key2Y = keyPicks[2]?.y ?? -1;
+            
+            this.state.plate0X = platePicks[0]?.x ?? -1; this.state.plate0Y = platePicks[0]?.y ?? -1;
+            this.state.plate1X = platePicks[1]?.x ?? -1; this.state.plate1Y = platePicks[1]?.y ?? -1;
+            this.state.plate2X = platePicks[2]?.x ?? -1; this.state.plate2Y = platePicks[2]?.y ?? -1;
+        }
+    }
+
+    private pickSpreadCells(count: number) : {x: number; y: number}[] {
+        // checks if maze is built before being called
+        if (!this.state.mazeWalls || this.state.mazeWalls.length === 0) {
+            console.warn("pickSpreadCells called before maze was built");
+            return [];
+        } 
+
+        const candidates: { x: number; y: number}[] = [];
         // collect all cells that are far enough from start and exit to be plate candidates
-        const candidates: { x: number; y: number }[] = [];
         for (let y = 0; y < this.state.gridHeight; y++) {
             for (let x = 0; x < this.state.gridWidth; x++) {
                 const distFromStart = Math.abs(x - this.state.startX) + Math.abs(y - this.state.startY);
                 const distFromExit = Math.abs(x - this.state.exitX) + Math.abs(y - this.state.exitY);
+
                 if (distFromStart < 3 || distFromExit < 3) continue;
-                candidates.push({ x, y });
-            }
+                candidates.push({x, y});
+            } 
         }
 
-        // shuffle so plate positions are random each level
+        // shuffle so object positions are random each level
         for (let i = candidates.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
         }
 
-        const needed = this.isSoloMode ? 1 : 3;
-        this.state.pressurePlatesRequired = needed;
-        this.state.pressurePlatesActivated = 0;
-        this.state.exitUnlocked = false;
-        this.state.playersAtExit = 0;
-
-        // pick plates that are spread out from each other (at least 3 cells apart)
+        // pick objects that are spread out from each other (at least 3 cells apart)
         const picks: { x: number; y: number }[] = [];
         for (const c of candidates) {
             if (picks.every(p => Math.abs(p.x - c.x) + Math.abs(p.y - c.y) >= 3)) {
                 picks.push(c);
-                if (picks.length === needed) break;
+                if (picks.length === count) break;
             }
         }
+
         // fallback if maze is too small to find spread candidates
-        for (let i = picks.length; i < needed && i < candidates.length; i++) {
-            picks.push(candidates[i]);
+        for (let i = picks.length; i < count && i < candidates.length; i++) {
+            const fallback = candidates[i];
+            if (!fallback) break;
+            picks.push(fallback);
         }
 
-        this.state.plate0X = picks[0]?.x ?? this.state.exitX;
-        this.state.plate0Y = picks[0]?.y ?? this.state.exitY;
-        this.state.plate1X = picks[1]?.x ?? -1;
-        this.state.plate1Y = picks[1]?.y ?? -1;
-        this.state.plate2X = picks[2]?.x ?? -1;
-        this.state.plate2Y = picks[2]?.y ?? -1;
+        return picks; 
     }
 
     private checkPressurePlates() {
@@ -415,26 +487,22 @@ export class GameRoom extends Room<GameState> {
 
         let activated = 0;
 
-        if (this.isSoloMode) {
-            const player = Array.from(this.state.players.values())[0];
-            if (player && platePositions[0]) {
-                const { x: plateX, y: plateY } = platePositions[0];
-                if (Math.hypot(player.x - plateX, player.y - plateY) < this.PLATE_RADIUS) {
-                    activated = 1;
-                }
-            }
-        } else {
-            // sort players the same way the client does — player 0 = teal plate, etc.
-            const ordered = Array.from(this.state.players.entries())
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([_, p]) => p);
+        // sort players the same way the client does — player 0 = teal plate, etc.
+        const ordered = Array.from(this.state.players.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([_, p]) => p);
 
-            for (let i = 0; i < platePositions.length && i < ordered.length; i++) {
-                const { x: plateX, y: plateY } = platePositions[i];
-                if (Math.hypot(ordered[i].x - plateX, ordered[i].y - plateY) < this.PLATE_RADIUS) {
-                    activated++;
-                }
-            }
+        
+        for (let i = 0; i < platePositions.length && i < ordered.length; i++) {
+            const { x: plateX, y: plateY } = platePositions[i];
+            const playerOnPlate = Math.hypot(ordered[i].x - plateX, ordered[i].y - plateY) < this.PLATE_RADIUS;
+            
+            // for keys - player must have collected their key first
+            const hasKey = this.state.obstacleType === "keys" 
+                ? (this.state.keysCollectedMask & (1 << i)) !== 0
+                : true;
+
+            if (playerOnPlate && hasKey) activated++;            
         }
 
         this.state.pressurePlatesActivated = activated;
@@ -444,6 +512,7 @@ export class GameRoom extends Room<GameState> {
     }
 
     private advanceLevel() {
+        console.log("Advancing to stage", this.state.stage + 1);
         const nextStage = this.state.stage + 1;
         this.buildMazeForStage(nextStage);
         this.generateInitialCollectibles();
@@ -453,5 +522,45 @@ export class GameRoom extends Room<GameState> {
             stage: this.state.stage,
             seed: this.state.seed,
         });
+    }
+
+    private handleCollectKey(client: Client, message: { index?: number}) {
+        if (!this.state.gameStarted || this.state.isGameOver) return;
+        if (this.state.obstacleType !== "keys") return;
+
+        const player = this.state.players.get(client.sessionId);
+        const index = typeof message.index === "number" ? message.index : -1;
+
+        if (!player || index < 0) return; 
+
+        // verify the player is close enough to the key
+        const keyPositions = [
+            {x: this.state.key0X, y: this.state.key0Y},
+            {x: this.state.key1X, y: this.state.key1Y},
+            {x: this.state.key2X, y: this.state.key2Y}
+        ];
+
+        const key = keyPositions[index];
+        if (!key || key.x < 0) return;
+        
+        const dist = Math.hypot(player.x - key.x, player.y - key.y);
+        if (dist > this.COLLECTIBLE_PICKUP_RADIUS) return;
+
+        // remove the key by setting it to -1
+        if (index === 0) { this.state.key0X = -1; this.state.key0Y = -1; }
+        if (index === 1) { this.state.key1X = -1; this.state.key1Y = -1; }
+        if (index === 2) { this.state.key2X = -1; this.state.key2Y = -1; }
+
+        // track which player collected their key via bitmask
+        this.state.keysCollectedMask |= (1 << index);
+
+        const remaining = [
+            this.state.key0X, this.state.key1X, this.state.key2X
+        ].slice(0, this.state.keysRequired).filter(x => x>= 0).length;
+
+        if (remaining === 0) {
+            this.state.allKeysCollected = true;
+            this.broadcast("allKeysCollected");
+        }
     }
 }
