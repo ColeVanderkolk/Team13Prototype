@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { ArraySchema } from "@colyseus/schema";
-import { Collectible, GameState, Player } from "../schema/GameState";
+import { Collectible, GameState, GraffitiStroke, Player } from "../schema/GameState";
 import {
     generateMaze,
     getMazeSizeForStage,
@@ -12,6 +12,13 @@ import {
 interface PositionMessage {
     x?: number;
     y?: number;
+}
+
+interface DrawStrokeMessage {
+    wallKey?: string;
+    points?: number[];
+    eraser?: boolean;
+    side?: number;
 }
 
 interface CollectMessage {
@@ -33,6 +40,10 @@ export class GameRoom extends Room<GameState> {
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
     private readonly PLATE_RADIUS = 0.2;
+    private strokeCounter = 0;
+    private readonly STROKE_MAX_POINTS = 64;
+    private readonly STROKE_MAX_PER_WALL = 24;
+    private readonly STROKE_MAX_TOTAL = 600;
 
     onCreate(options: any) {
         console.log("GameRoom created with options:", options, "| Room ID:", this.roomId);
@@ -44,6 +55,10 @@ export class GameRoom extends Room<GameState> {
 
         this.onMessage("position", (client, message: PositionMessage) => {
             this.handlePosition(client, message);
+        });
+
+        this.onMessage("drawStroke", (client, message: DrawStrokeMessage) => {
+            this.handleDrawStroke(client, message);
         });
 
         this.onMessage("collect", (client, message: CollectMessage) => {
@@ -269,6 +284,7 @@ export class GameRoom extends Room<GameState> {
         this.state.exitX = maze.exitX;
         this.state.exitY = maze.exitY;
         this.state.mazeWalls = mazeWalls;
+        this.state.graffiti.clear();
         this.configureLevelObjective();
     }
 
@@ -509,6 +525,58 @@ export class GameRoom extends Room<GameState> {
         if (activated >= this.state.pressurePlatesRequired) {
             this.state.exitUnlocked = true;
         }
+    }
+
+    private parseWallKey(wallKey: unknown): { x: number; y: number } | null {
+        if (typeof wallKey !== "string") return null;
+        const match = wallKey.match(/^(\d+)-(\d+)-(n|w|e|s)$/);
+        if (!match) return null;
+
+        const x = Number(match[1]);
+        const y = Number(match[2]);
+        if (x < 0 || y < 0 || x >= this.state.gridWidth || y >= this.state.gridHeight) return null;
+
+        return { x, y };
+    }
+
+    private handleDrawStroke(client: Client, message: DrawStrokeMessage) {
+        const player = this.state.players.get(client.sessionId);
+        if (!player || this.state.isGameOver) return;
+
+        const cell = this.parseWallKey(message?.wallKey);
+        if (!cell) return;
+
+        // Only allow drawing on walls near the player (no tagging across the map)
+        if (Math.abs(player.x - cell.x) + Math.abs(player.y - cell.y) > 2.5) return;
+
+        // Validate the stroke: a flat, even-length list of finite 0..1 coordinates
+        const raw = message?.points;
+        if (!Array.isArray(raw)) return;
+        if (raw.length < 2 || raw.length > this.STROKE_MAX_POINTS * 2) return;
+        if (raw.length % 2 !== 0) return;
+        if (!raw.every((n) => typeof n === "number" && Number.isFinite(n))) return;
+
+        // Cap strokes per wall and in total so game state can't be flooded
+        let total = 0;
+        let onThisWall = 0;
+        this.state.graffiti.forEach((stroke) => {
+            total++;
+            if (stroke.wallKey === message.wallKey) onThisWall++;
+        });
+        if (total >= this.STROKE_MAX_TOTAL) return;
+        if (onThisWall >= this.STROKE_MAX_PER_WALL) return;
+
+        const stroke = new GraffitiStroke();
+        stroke.wallKey = message.wallKey as string;
+        stroke.sessionId = client.sessionId;
+        stroke.eraser = message.eraser === true;
+        stroke.side = message.side === -1 ? -1 : 1;
+        const points = new ArraySchema<number>();
+        raw.forEach((n) => points.push(Math.min(1, Math.max(0, n))));
+        stroke.points = points;
+
+        this.strokeCounter += 1;
+        this.state.graffiti.set(`s${this.strokeCounter}`, stroke);
     }
 
     private advanceLevel() {
