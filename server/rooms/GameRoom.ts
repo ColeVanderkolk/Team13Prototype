@@ -229,8 +229,25 @@ export class GameRoom extends Room<GameState> {
         candidates.sort((a, b) => a.rank - b.rank);
 
         const count = Math.min(candidates.length, Math.max(4, Math.min(10, this.state.stage + 4)));
-        for (let i = 0; i < count; i++) {
-            const cell = candidates[i];
+
+        // pick candidates spread out from each other (at least 3 cells apart), so a player
+        // can't just sweep several of them in one straight run down a single path
+        const picks: { x: number; y: number }[] = [];
+        for (const c of candidates) {
+            if (picks.every(p => Math.abs(p.x - c.x) + Math.abs(p.y - c.y) >= 3)) {
+                picks.push(c);
+                if (picks.length === count) break;
+            }
+        }
+        // fallback if the maze is too small to find enough spread-out candidates
+        for (let i = 0; i < candidates.length && picks.length < count; i++) {
+            const c = candidates[i];
+            if (picks.some(p => p.x === c.x && p.y === c.y)) continue;
+            picks.push(c);
+        }
+
+        for (let i = 0; i < picks.length; i++) {
+            const cell = picks[i];
             const collectible = new Collectible();
             collectible.id = `stage-${this.state.stage}-collectible-${i}-${cell.x}-${cell.y}`;
             collectible.x = cell.x;
