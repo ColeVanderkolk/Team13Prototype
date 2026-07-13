@@ -12,6 +12,7 @@ import { StageAnnouncement } from "@/components/game/StageAnnouncement";
 import { DevStageControls } from "@/components/game/DevStageControls";
 import { MazeBoard } from "@/components/game/MazeBoard";
 import { Compass } from "@/components/game/Compass";
+import { LeverPrompt } from "@/components/game/LeverPrompt";
 
 // Error boundary to catch silent Canvas/Three.js crashes
 class CanvasErrorBoundary extends Component<
@@ -110,6 +111,11 @@ interface GameScreenProps {
     plate2Y: number;
     obstacleType: string;
     playersAtExit: number;
+    leversTotal: number;
+    leversPulledInOrder: number;
+    leverCellX: number[];
+    leverCellY: number[];
+    leverWallDir: number[];
 }
 
 export const GameScreen = ({
@@ -141,6 +147,11 @@ export const GameScreen = ({
     plate2Y,
     obstacleType,
     playersAtExit,
+    leversTotal,
+    leversPulledInOrder,
+    leverCellX,
+    leverCellY,
+    leverWallDir,
 }: GameScreenProps) => {
     const pendingInputsRef = useRef<Map<number, { x: number, y: number }>>(new Map());
     const seqCounterRef = useRef(0);
@@ -153,6 +164,7 @@ export const GameScreen = ({
 
     const noiseFieldRef = useRef<NoiseFieldHandle>(null);
     const compassYawRef = useRef<number | null>(null);
+    const leverInRangeRef = useRef(false);
 
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsExiting, setSettingsExiting] = useState(false);
@@ -565,7 +577,13 @@ export const GameScreen = ({
           plate2Y={plate2Y}
           obstacleType={obstacleType}
           playersAtExit={playersAtExit}
+          leversTotal={leversTotal}
+          leversPulledInOrder={leversPulledInOrder}
+          leverCellX={leverCellX}
+          leverCellY={leverCellY}
+          leverWallDir={leverWallDir}
           compassYawRef={compassYawRef}
+          leverInRangeRef={leverInRangeRef}
         />
 
         <DeferredEffects />
@@ -575,6 +593,10 @@ export const GameScreen = ({
 
       <div className="absolute bottom-4 left-4 z-10 pointer-events-none">
         <Compass compassYawRef={compassYawRef} />
+      </div>
+
+      <div className="absolute bottom-1/2 left-1/2 z-10 -translate-x-1/2 translate-y-24 pointer-events-none">
+        <LeverPrompt leverInRangeRef={leverInRangeRef} />
       </div>
 
       {/* Overlays — AFTER R3F Canvas, no wrapper divs, canvases use mix-blend-mode:screen */}

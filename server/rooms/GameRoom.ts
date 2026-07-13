@@ -2,12 +2,20 @@ import { Room, Client } from "colyseus";
 import { ArraySchema } from "@colyseus/schema";
 import { Collectible, GameState, Player } from "../schema/GameState";
 import {
+    ALL_WALLS,
     generateMaze,
     getMazeSizeForStage,
     isDeadEndCell,
     mazeIndex,
     wallForDirection,
 } from "../maze/generateMaze";
+
+const WALL_DIRECTIONS = [
+    wallForDirection("up"),
+    wallForDirection("right"),
+    wallForDirection("down"),
+    wallForDirection("left"),
+];
 
 interface PositionMessage {
     x?: number;
@@ -33,6 +41,7 @@ export class GameRoom extends Room<GameState> {
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
     private readonly PLATE_RADIUS = 0.2;
+    private readonly LEVER_RADIUS = 0.55;
 
     onCreate(options: any) {
         console.log("GameRoom created with options:", options, "| Room ID:", this.roomId);
@@ -52,6 +61,10 @@ export class GameRoom extends Room<GameState> {
 
         this.onMessage("collect", (client, message: CollectMessage) => {
             this.handleCollect(client, message);
+        });
+
+        this.onMessage("pullLever", (client) => {
+            this.handlePullLever(client);
         });
 
         this.onMessage("devStageUp", (client) => {
@@ -355,9 +368,35 @@ export class GameRoom extends Room<GameState> {
     private configureLevelObjective() {
         // pick one obstacle type randomly from the pool each level
         // add more strings here later when new obstacle types are built
-        const OBSTACLE_POOL = ["pressurePlates"];
+        const OBSTACLE_POOL = ["pressurePlates", "levers"];
         this.state.obstacleType = OBSTACLE_POOL[Math.floor(Math.random() * OBSTACLE_POOL.length)];
 
+        this.state.exitUnlocked = false;
+        this.state.playersAtExit = 0;
+
+        // clear both obstacles' state so switching type between levels doesn't leave stale data
+        this.state.pressurePlatesRequired = 0;
+        this.state.pressurePlatesActivated = 0;
+        this.state.plate0X = -1;
+        this.state.plate0Y = -1;
+        this.state.plate1X = -1;
+        this.state.plate1Y = -1;
+        this.state.plate2X = -1;
+        this.state.plate2Y = -1;
+        this.state.leversTotal = 0;
+        this.state.leversPulledInOrder = 0;
+        this.state.leverCellX = new ArraySchema<number>();
+        this.state.leverCellY = new ArraySchema<number>();
+        this.state.leverWallDir = new ArraySchema<number>();
+
+        if (this.state.obstacleType === "levers") {
+            this.configureLevers();
+        } else {
+            this.configurePressurePlates();
+        }
+    }
+
+    private configurePressurePlates() {
         // collect all cells that are far enough from start and exit to be plate candidates
         const candidates: { x: number; y: number }[] = [];
         for (let y = 0; y < this.state.gridHeight; y++) {
@@ -377,9 +416,6 @@ export class GameRoom extends Room<GameState> {
 
         const needed = this.isSoloMode ? 1 : 3;
         this.state.pressurePlatesRequired = needed;
-        this.state.pressurePlatesActivated = 0;
-        this.state.exitUnlocked = false;
-        this.state.playersAtExit = 0;
 
         // pick plates that are spread out from each other (at least 3 cells apart)
         const picks: { x: number; y: number }[] = [];
@@ -400,6 +436,131 @@ export class GameRoom extends Room<GameState> {
         this.state.plate1Y = picks[1]?.y ?? -1;
         this.state.plate2X = picks[2]?.x ?? -1;
         this.state.plate2Y = picks[2]?.y ?? -1;
+    }
+
+    // levers are placed on whatever wall the maze generator already put there — never touches wall generation itself.
+    // lever count is capped lower on bigger mazes so search difficulty doesn't stack with maze size.
+    private configureLevers() {
+        const mazeSize = Math.max(this.state.gridWidth, this.state.gridHeight);
+        const maxForSize = mazeSize <= 14 ? 5 : 3;
+        const needed = 3 + Math.floor(Math.random() * (maxForSize - 3 + 1));
+
+        // collect cells that are far enough from start/exit and have at least one wall to mount a lever on
+        const candidates: { x: number; y: number; walls: number[] }[] = [];
+        for (let y = 0; y < this.state.gridHeight; y++) {
+            for (let x = 0; x < this.state.gridWidth; x++) {
+                const distFromStart = Math.abs(x - this.state.startX) + Math.abs(y - this.state.startY);
+                const distFromExit = Math.abs(x - this.state.exitX) + Math.abs(y - this.state.exitY);
+                if (distFromStart < 3 || distFromExit < 3) continue;
+
+                const mask = this.state.mazeWalls[mazeIndex(this.state.gridWidth, x, y)] ?? ALL_WALLS;
+                const availableWalls = WALL_DIRECTIONS.filter((dir) => (mask & dir) !== 0);
+                if (availableWalls.length === 0) continue;
+
+                candidates.push({ x, y, walls: availableWalls });
+            }
+        }
+
+        // shuffle so lever positions are random each level
+        for (let i = candidates.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+
+        // pick cells spread out from each other (at least 3 cells apart), same spirit as plate placement
+        const picks: { x: number; y: number; wallDir: number }[] = [];
+        for (const c of candidates) {
+            if (picks.every(p => Math.abs(p.x - c.x) + Math.abs(p.y - c.y) >= 3)) {
+                const wallDir = c.walls[Math.floor(Math.random() * c.walls.length)];
+                picks.push({ x: c.x, y: c.y, wallDir });
+                if (picks.length === needed) break;
+            }
+        }
+        // fallback if maze is too small to find spread candidates
+        for (let i = picks.length; i < needed && i < candidates.length; i++) {
+            const c = candidates[i];
+            if (picks.some(p => p.x === c.x && p.y === c.y)) continue;
+            const wallDir = c.walls[Math.floor(Math.random() * c.walls.length)];
+            picks.push({ x: c.x, y: c.y, wallDir });
+        }
+
+        this.state.leversTotal = picks.length;
+        const leverCellX = new ArraySchema<number>();
+        const leverCellY = new ArraySchema<number>();
+        const leverWallDir = new ArraySchema<number>();
+        picks.forEach((p) => {
+            leverCellX.push(p.x);
+            leverCellY.push(p.y);
+            leverWallDir.push(p.wallDir);
+        });
+        this.state.leverCellX = leverCellX;
+        this.state.leverCellY = leverCellY;
+        this.state.leverWallDir = leverWallDir;
+    }
+
+    // the trigger point sits just inside the cell, against the wall the lever is mounted on
+    private leverTriggerPosition(index: number) {
+        const cellX = this.state.leverCellX[index];
+        const cellY = this.state.leverCellY[index];
+        const wallDir = this.state.leverWallDir[index];
+        const inset = 0.35;
+
+        let offsetX = 0;
+        let offsetY = 0;
+        if (wallDir === wallForDirection("up")) offsetY = -inset;
+        else if (wallDir === wallForDirection("down")) offsetY = inset;
+        else if (wallDir === wallForDirection("left")) offsetX = -inset;
+        else if (wallDir === wallForDirection("right")) offsetX = inset;
+
+        return { x: cellX + offsetX, y: cellY + offsetY };
+    }
+
+    // interact-key driven — walking near a lever does nothing by itself, so players can safely
+    // explore near several of them to read their shapes before committing to a pull order.
+    private handlePullLever(client: Client) {
+        if (!this.state.gameStarted || this.state.countdown > 0 || this.state.isGameOver) return;
+        if (this.state.obstacleType !== "levers") return;
+        if (this.state.exitUnlocked) return;
+        if (this.state.leversTotal === 0) return;
+
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+
+        // find whichever lever is closest and within reach — must be standing in the same cell
+        // the lever is mounted in, not just geometrically close (a wall may separate two cells
+        // whose trigger points are within radius of each other)
+        const playerCellX = Math.round(player.x);
+        const playerCellY = Math.round(player.y);
+        let nearestIndex = -1;
+        let nearestDistance = this.LEVER_RADIUS;
+        for (let i = 0; i < this.state.leversTotal; i++) {
+            if (this.state.leverCellX[i] !== playerCellX || this.state.leverCellY[i] !== playerCellY) continue;
+
+            const { x, y } = this.leverTriggerPosition(i);
+            const distance = Math.hypot(player.x - x, player.y - y);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestIndex = i;
+            }
+        }
+        if (nearestIndex === -1) return; // nothing in reach
+
+        if (nearestIndex === this.state.leversPulledInOrder) {
+            // the correct next lever — turn it on
+            this.state.leversPulledInOrder += 1;
+        } else if (nearestIndex < this.state.leversPulledInOrder) {
+            // already on — pulling it again turns it back off, along with everything after it
+            // (later levers in the sequence depended on this one being on)
+            this.state.leversPulledInOrder = nearestIndex;
+        } else {
+            // a lever ahead of the correct one — wrong order, reset progress
+            this.state.leversPulledInOrder = 0;
+            this.broadcast("leverWrongPull");
+        }
+
+        if (this.state.leversPulledInOrder >= this.state.leversTotal) {
+            this.state.exitUnlocked = true;
+        }
     }
 
     private checkPressurePlates() {

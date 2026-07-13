@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type * as Client from "colyseus.js";
 import * as THREE from "three";
 import { MazeCollectibles } from "./MazeCollectibles";
 import { MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
+import { Levers } from "./Levers";
 
 const WALL_NORTH = 1;
 const WALL_EAST = 2;
@@ -25,6 +26,21 @@ const SPRINT_SPEED = 4.6;
 const PLAYER_RADIUS = 0.23;
 const CAM_ANGLE = Math.PI * 0.25;
 const POSITION_SEND_INTERVAL = 1 / 20;
+
+// mirrors the server's leverTriggerPosition/LEVER_RADIUS (GameRoom.ts) — used only for the
+// "press E" hint, not to decide the actual pull (the server remains authoritative for that).
+const LEVER_INTERACT_INSET = 0.35;
+const LEVER_INTERACT_RADIUS = 0.55;
+
+function leverTriggerPosition(cellX: number, cellY: number, wallDir: number): [number, number] {
+  let offsetX = 0;
+  let offsetY = 0;
+  if (wallDir === WALL_NORTH) offsetY = -LEVER_INTERACT_INSET;
+  else if (wallDir === WALL_SOUTH) offsetY = LEVER_INTERACT_INSET;
+  else if (wallDir === WALL_WEST) offsetX = -LEVER_INTERACT_INSET;
+  else if (wallDir === WALL_EAST) offsetX = LEVER_INTERACT_INSET;
+  return [cellX + offsetX, cellY + offsetY];
+}
 
 // First-person mode (toggle with V)
 const FP_EYE_HEIGHT = 0.62;
@@ -78,7 +94,13 @@ interface MazeBoardProps {
   plate2Y: number;
   obstacleType: string;
   playersAtExit: number;
+  leversTotal: number;
+  leversPulledInOrder: number;
+  leverCellX: number[];
+  leverCellY: number[];
+  leverWallDir: number[];
   compassYawRef: MutableRefObject<number | null>;
+  leverInRangeRef?: MutableRefObject<boolean>;
 }
 
 interface LocalPosition {
@@ -332,7 +354,13 @@ export function MazeBoard({
   plate2Y,
   obstacleType,
   playersAtExit,
+  leversTotal,
+  leversPulledInOrder,
+  leverCellX,
+  leverCellY,
+  leverWallDir,
   compassYawRef,
+  leverInRangeRef,
 }: MazeBoardProps) {
   const hasMaze = gridWidth > 0 && gridHeight > 0 && mazeWalls.length === gridWidth * gridHeight;
   const boardWidth = gridWidth * CELL_SIZE;
@@ -347,6 +375,7 @@ export function MazeBoard({
     y: currentPlayer?.y ?? startY,
   });
   const pressedKeysRef = useRef<Set<string>>(new Set());
+  const [leverWrongPullKey, setLeverWrongPullKey] = useState(0);
   const firstPersonRef = useRef(false); // toggled with the V key
   const fpYawRef = useRef(0); // horizontal facing while in first person
   const fpPitchRef = useRef(0); // vertical look while in first person
@@ -466,6 +495,11 @@ export function MazeBoard({
         }
         return;
       }
+      if (event.code === "KeyE") {
+        // interact: attempt to pull whichever lever is closest, in range — never triggered by just walking near one
+        if (!event.repeat) room?.send("pullLever");
+        return;
+      }
       if (!isControlKey(event)) return;
       event.preventDefault();
       pressedKeysRef.current.add(event.code);
@@ -511,7 +545,7 @@ export function MazeBoard({
       canvas.removeEventListener("click", handleCanvasClick);
       if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
-  }, [gl]);
+  }, [gl, room]);
 
   useEffect(() => {
     if (!room) return;
@@ -523,6 +557,18 @@ export function MazeBoard({
       localPositionRef.current.y = position.y;
       lastSentPositionRef.current.x = position.x;
       lastSentPositionRef.current.y = position.y;
+    });
+
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, [room]);
+
+  useEffect(() => {
+    if (!room) return;
+
+    const unsubscribe = room.onMessage("leverWrongPull", () => {
+      setLeverWrongPullKey((key) => key + 1);
     });
 
     return () => {
@@ -559,6 +605,27 @@ export function MazeBoard({
 
   useFrame((state, delta) => {
     compassYawRef.current = firstPersonRef.current ? fpYawRef.current : null;
+
+    if (leverInRangeRef) {
+      let inRange = false;
+      if (obstacleType === "levers") {
+        const { x: px, y: py } = localPositionRef.current;
+        const playerCellX = Math.round(px);
+        const playerCellY = Math.round(py);
+        for (let i = 0; i < leverCellX.length; i++) {
+          // must be standing in the same cell the lever is mounted in — otherwise a wall may
+          // separate the player from a trigger point that's still geometrically close by
+          if (leverCellX[i] !== playerCellX || leverCellY[i] !== playerCellY) continue;
+
+          const [triggerX, triggerY] = leverTriggerPosition(leverCellX[i], leverCellY[i], leverWallDir[i]);
+          if (Math.hypot(px - triggerX, py - triggerY) < LEVER_INTERACT_RADIUS) {
+            inRange = true;
+            break;
+          }
+        }
+      }
+      leverInRangeRef.current = inRange;
+    }
 
     if (!room || !currentPlayer || !hasMaze || countdown > 0) return;
 
@@ -722,6 +789,18 @@ export function MazeBoard({
             gridHeight={gridHeight}
             players={players}
             pressurePlatesRequired={pressurePlatesRequired}
+          />
+        )}
+
+        {obstacleType === "levers" && (
+          <Levers
+            leverCellX={leverCellX}
+            leverCellY={leverCellY}
+            leverWallDir={leverWallDir}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            leversPulledInOrder={leversPulledInOrder}
+            wrongPullKey={leverWrongPullKey}
           />
         )}
       </group>

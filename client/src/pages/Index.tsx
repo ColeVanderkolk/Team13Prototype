@@ -63,6 +63,11 @@ interface ServerGameState {
     plate2Y: number;
     obstacleType: string;
     playersAtExit: number;
+    leversTotal: number;
+    leversPulledInOrder: number;
+    leverCellX: { forEach: (callback: (value: number) => void) => void };
+    leverCellY: { forEach: (callback: (value: number) => void) => void };
+    leverWallDir: { forEach: (callback: (value: number) => void) => void };
     totalScore: number;
     gameStarted: boolean;
     countdown: number;
@@ -95,6 +100,11 @@ interface GameStateLocal {
   plate2Y: number;
   obstacleType: string;
   playersAtExit: number;
+  leversTotal: number;
+  leversPulledInOrder: number;
+  leverCellX: number[];
+  leverCellY: number[];
+  leverWallDir: number[];
   players: Map<string, PlayerState>;
   collectibles: Collectible[];
   totalScore: number;
@@ -133,6 +143,11 @@ const initialGameState: GameStateLocal = {
     plate2Y: -1,
     obstacleType: "pressurePlates",
     playersAtExit: 0,
+    leversTotal: 0,
+    leversPulledInOrder: 0,
+    leverCellX: [],
+    leverCellY: [],
+    leverWallDir: [],
     players: new Map(),
     collectibles: [],
     totalScore: 0,
@@ -254,6 +269,13 @@ const Index = () => {
     const mazeWalls: number[] = [];
     gameRoom.state.mazeWalls?.forEach((wallMask) => mazeWalls.push(wallMask));
 
+    const leverCellX: number[] = [];
+    gameRoom.state.leverCellX?.forEach((value) => leverCellX.push(value));
+    const leverCellY: number[] = [];
+    gameRoom.state.leverCellY?.forEach((value) => leverCellY.push(value));
+    const leverWallDir: number[] = [];
+    gameRoom.state.leverWallDir?.forEach((value) => leverWallDir.push(value));
+
     dispatch({
       type: "SYNC_STATE",
       payload: {
@@ -275,6 +297,11 @@ const Index = () => {
           plate2Y: gameRoom.state.plate2Y ?? -1,
           obstacleType: gameRoom.state.obstacleType || "pressurePlates",
           playersAtExit: gameRoom.state.playersAtExit || 0,
+          leversTotal: gameRoom.state.leversTotal || 0,
+          leversPulledInOrder: gameRoom.state.leversPulledInOrder || 0,
+          leverCellX,
+          leverCellY,
+          leverWallDir,
           totalScore: gameRoom.state.totalScore || 0,
           gameStarted: gameRoom.state.gameStarted || false,
           stage: gameRoom.state.stage || 1,
@@ -548,7 +575,7 @@ const Index = () => {
           room?.leave();
           resultsReasonRef.current = "abandoned";
           setShowResults(true);
-        } } isSoloMode={initPayload?.soloMode || false} pressurePlatesRequired={gameState.pressurePlatesRequired} plate0X={gameState.plate0X} plate0Y={gameState.plate0Y} plate1X={gameState.plate1X} plate1Y={gameState.plate1Y} plate2X={gameState.plate2X} plate2Y={gameState.plate2Y} obstacleType={gameState.obstacleType} playersAtExit={gameState.playersAtExit} />
+        } } isSoloMode={initPayload?.soloMode || false} pressurePlatesRequired={gameState.pressurePlatesRequired} plate0X={gameState.plate0X} plate0Y={gameState.plate0Y} plate1X={gameState.plate1X} plate1Y={gameState.plate1Y} plate2X={gameState.plate2X} plate2Y={gameState.plate2Y} obstacleType={gameState.obstacleType} playersAtExit={gameState.playersAtExit} leversTotal={gameState.leversTotal} leversPulledInOrder={gameState.leversPulledInOrder} leverCellX={gameState.leverCellX} leverCellY={gameState.leverCellY} leverWallDir={gameState.leverWallDir} />
       {/* TODO: revert — temporarily showing overlay in solo mode */}
       {(gameState.countdown > 0 || showGo) && (() => {
         const from = 10;

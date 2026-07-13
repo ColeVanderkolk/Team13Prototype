@@ -49,6 +49,14 @@ export class GameState extends Schema {
 
     @type("number") playersAtExit: number = 0;
 
+    @type("number") leversTotal: number = 0;
+
+    @type("number") leversPulledInOrder: number = 0;
+
+    @type(["number"]) leverCellX = new ArraySchema<number>();
+    @type(["number"]) leverCellY = new ArraySchema<number>();
+    @type(["number"]) leverWallDir = new ArraySchema<number>();
+
     @type([Collectible]) collectibles = new ArraySchema<Collectible>();
 
     @type("number") totalScore: number = 0;
