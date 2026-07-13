@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { GltfModel } from "./MazeModels";
+
+// only the body is swappable — the handle and shape marker change color to signal game
+// state (idle/solved/wrong-pull), so they stay procedural rather than a static custom model
+const LEVER_BODY_MODEL_URL = (import.meta.env.VITE_LEVER_BODY_MODEL_URL || "").trim();
 
 const CELL_SIZE = 1.8;
 const WALL_NORTH = 1;
@@ -93,10 +98,14 @@ function SingleLever({
       )}
 
       {/* body: a plain box flush against the wall */}
-      <mesh position={[0, 0.6, 0.045]} castShadow receiveShadow>
-        <boxGeometry args={[0.18, 0.5, 0.09]} />
-        <meshStandardMaterial color="#262b36" roughness={0.55} metalness={0.2} />
-      </mesh>
+      {LEVER_BODY_MODEL_URL ? (
+        <GltfModel url={LEVER_BODY_MODEL_URL} position={[0, 0.6, 0.045]} scale={[0.18, 0.5, 0.09]} />
+      ) : (
+        <mesh position={[0, 0.6, 0.045]} castShadow receiveShadow>
+          <boxGeometry args={[0.18, 0.5, 0.09]} />
+          <meshStandardMaterial color="#262b36" roughness={0.55} metalness={0.2} />
+        </mesh>
+      )}
 
       {/* handle: sits high (idle) sticking out past the body's sides, drops flush with the bottom once solved */}
       <mesh position={[0, isSolved ? 0.43 : 0.77, 0.1]} castShadow receiveShadow>

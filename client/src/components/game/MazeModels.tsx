@@ -4,10 +4,11 @@ import * as THREE from "three";
 
 const WALL_MODEL_URL = (import.meta.env.VITE_MAZE_WALL_MODEL_URL || "").trim();
 const PLAYER_MODEL_URL = (import.meta.env.VITE_MAZE_PLAYER_MODEL_URL || "").trim();
+const EXIT_BARRIER_MODEL_URL = (import.meta.env.VITE_EXIT_BARRIER_MODEL_URL || "").trim();
 
 type Vec3 = [number, number, number];
 
-function GltfModel({
+export function GltfModel({
   url,
   position = [0, 0, 0],
   rotation = [0, 0, 0],
@@ -98,5 +99,35 @@ export function MazePlayerAvatar({
         <meshStandardMaterial color="#dff9ff" emissive="#7dd3fc" emissiveIntensity={0.18} roughness={0.25} />
       </mesh>
     </group>
+  );
+}
+
+// the barrier that blocks the exit cell until the level's obstacle is solved — not the exit itself
+export function ExitBarrier({
+  exitWorldX,
+  exitWorldZ,
+  wallHeight,
+  cellSize,
+}: {
+  exitWorldX: number;
+  exitWorldZ: number;
+  wallHeight: number;
+  cellSize: number;
+}) {
+  const position: Vec3 = [exitWorldX, wallHeight / 2, exitWorldZ];
+  const size: Vec3 = [cellSize * 0.82, wallHeight, cellSize * 0.82];
+
+  return (
+    <>
+      {EXIT_BARRIER_MODEL_URL ? (
+        <GltfModel url={EXIT_BARRIER_MODEL_URL} position={position} scale={size} />
+      ) : (
+        <mesh position={position}>
+          <boxGeometry args={size} />
+          <meshStandardMaterial color="#7c3aed" emissive="#4c1d95" emissiveIntensity={0.7} roughness={0.25} metalness={0.1} />
+        </mesh>
+      )}
+      <pointLight position={[exitWorldX, 1.5, exitWorldZ]} color="#7c3aed" intensity={1.8} distance={5} />
+    </>
   );
 }

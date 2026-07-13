@@ -3,7 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import type * as Client from "colyseus.js";
 import * as THREE from "three";
 import { MazeCollectibles } from "./MazeCollectibles";
-import { MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
+import { ExitBarrier, MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
 import { Keys } from "./Keys";
@@ -1208,13 +1208,12 @@ export function MazeBoard({
 
         {/* barrier wall — sits at the exit and blocks it until the obstacle is solved */}
         {!exitUnlocked && (
-          <>
-            <mesh position={[exitWorldX, WALL_HEIGHT / 2, exitWorldZ]}>
-              <boxGeometry args={[CELL_SIZE * 0.82, WALL_HEIGHT, CELL_SIZE * 0.82]} />
-              <meshStandardMaterial color="#7c3aed" emissive="#4c1d95" emissiveIntensity={0.7} roughness={0.25} metalness={0.1} />
-            </mesh>
-            <pointLight position={[exitWorldX, 1.5, exitWorldZ]} color="#7c3aed" intensity={1.8} distance={5} />
-          </>
+          <ExitBarrier
+            exitWorldX={exitWorldX}
+            exitWorldZ={exitWorldZ}
+            wallHeight={WALL_HEIGHT}
+            cellSize={CELL_SIZE}
+          />
         )}
 
         {exitUnlocked && (
