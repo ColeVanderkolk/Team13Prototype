@@ -5,7 +5,7 @@ import type * as Client from "colyseus.js";
 import { CollectibleSimple } from "../../../../server/collectibles/CollectibleSimple.ts";
 
 const CELL_SIZE = 1.8;
-const PICKUP_RADIUS = 0.20;
+const PICKUP_RADIUS = 0.5;
 
 interface MazeCollectible {
   x: number;
@@ -48,7 +48,7 @@ function CollectibleSimpleObject({
   );
 
   useEffect(() => {
-    const instance = new CollectibleSimple(worldX, 0.85, worldZ);
+    const instance = new CollectibleSimple(worldX, 0.5, worldZ);
     instance.addToScene(scene as any);
     instanceRef.current = instance;
     hasReportedRef.current = false;
