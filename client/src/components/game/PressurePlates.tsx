@@ -2,6 +2,11 @@ import { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber'; // runs code every frame inside the 3D canvas, like a game loop
 import * as THREE from 'three'; // the 3D library, needed for material stuff and DoubleSide
 import { useSounds } from '@/hooks/use-sounds';
+import { GltfModel } from './MazeModels';
+
+// only the base pad is swappable — the ring's color/opacity pulse is the actual "you're
+// standing on it correctly" feedback, so it stays procedural rather than a static model
+const PLATE_MODEL_URL = (import.meta.env.VITE_PRESSURE_PLATE_MODEL_URL || "").trim();
 
 const CELL_SIZE = 1.8;
 const PLATE_DETECT_RADIUS = 0.22; // how close a player has to be before the plate counts as activated
@@ -64,11 +69,15 @@ function Plate({
 
     return (
         <group>
-            {/* filled colored disc on the floor */}
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[worldX, 0.05, worldZ]}>
-                <circleGeometry args={[0.36, 28]} />
-                <meshBasicMaterial ref={discRef} color={color} transparent opacity={isActive ? 0.85 : 0.2} side={THREE.DoubleSide} />
-            </mesh>
+            {/* base pad on the floor */}
+            {PLATE_MODEL_URL ? (
+                <GltfModel url={PLATE_MODEL_URL} position={[worldX, 0.05, worldZ]} scale={[0.72, 0.72, 0.72]} />
+            ) : (
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[worldX, 0.05, worldZ]}>
+                    <circleGeometry args={[0.36, 28]} />
+                    <meshBasicMaterial ref={discRef} color={color} transparent opacity={isActive ? 0.85 : 0.2} side={THREE.DoubleSide} />
+                </mesh>
+            )}
 
             {/* ring border around the disc */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[worldX, 0.04, worldZ]}>

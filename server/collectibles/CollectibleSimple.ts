@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
+const COLLECTIBLE_MODEL_URL = (import.meta.env.VITE_COLLECTIBLE_MODEL_URL || "").trim();
+const gltfLoader = new GLTFLoader();
 
 export class CollectibleSimple {
 
@@ -19,12 +23,25 @@ export class CollectibleSimple {
         this.spinGroup = new THREE.Group()
         this.spinGroup.position.set(x, y, z)
 
-        // placeholder box — swap this out later for the real compass visuals
-        const box = new THREE.Mesh(
-            new THREE.BoxGeometry(0.4, 0.4, 0.4),
-            new THREE.MeshStandardMaterial({ color: 0xffd700 })
-        )
-        this.spinGroup.add(box)
+        if (COLLECTIBLE_MODEL_URL) {
+            gltfLoader.load(COLLECTIBLE_MODEL_URL, (gltf) => {
+                const model = gltf.scene
+                model.traverse((object) => {
+                    if (object instanceof THREE.Mesh) {
+                        object.castShadow = true
+                        object.receiveShadow = true
+                    }
+                })
+                this.spinGroup.add(model)
+            })
+        } else {
+            // placeholder box — swap this out later for the real compass visuals
+            const box = new THREE.Mesh(
+                new THREE.BoxGeometry(0.4, 0.4, 0.4),
+                new THREE.MeshStandardMaterial({ color: 0xffd700 })
+            )
+            this.spinGroup.add(box)
+        }
 
         // glow so it's easy to spot in the maze
         const glow = new THREE.PointLight(0xffd700, 1.0, 3)

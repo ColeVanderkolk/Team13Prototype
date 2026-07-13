@@ -3,7 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import type * as Client from "colyseus.js";
 import * as THREE from "three";
 import { MazeCollectibles } from "./MazeCollectibles";
-import { MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
+import { ExitBarrier, MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
 import { Keys } from "./Keys";
@@ -137,6 +137,7 @@ interface MazeBoardProps {
   leverWallDir: number[];
   compassYawRef: MutableRefObject<number | null>;
   leverInRangeRef?: MutableRefObject<boolean>;
+  disabled?: boolean; // freezes movement and all interaction — used for the post-game results screen
 }
 
 interface LocalPosition {
@@ -527,7 +528,13 @@ export function MazeBoard({
   leverWallDir,
   compassYawRef,
   leverInRangeRef,
+  disabled = false,
 }: MazeBoardProps) {
+  const disabledRef = useRef(disabled);
+  useEffect(() => {
+    disabledRef.current = disabled;
+  }, [disabled]);
+
   const hasMaze = gridWidth > 0 && gridHeight > 0 && mazeWalls.length === gridWidth * gridHeight;
   const boardWidth = gridWidth * CELL_SIZE;
   const boardDepth = gridHeight * CELL_SIZE;
@@ -764,6 +771,7 @@ export function MazeBoard({
     };
 
     const handleMouseMove = (event: MouseEvent) => {
+      if (disabledRef.current) return;
       if (!firstPersonRef.current) return;
       if (document.pointerLockElement !== canvas) return;
       fpYawRef.current -= event.movementX * FP_MOUSE_SENSITIVITY;
@@ -1084,6 +1092,8 @@ export function MazeBoard({
   ]);
 
   useFrame((state, delta) => {
+    if (disabledRef.current) return;
+
     compassYawRef.current = firstPersonRef.current ? fpYawRef.current : null;
 
     if (leverInRangeRef) {
@@ -1214,13 +1224,12 @@ export function MazeBoard({
 
         {/* barrier wall — sits at the exit and blocks it until the obstacle is solved */}
         {!exitUnlocked && (
-          <>
-            <mesh position={[exitWorldX, WALL_HEIGHT / 2, exitWorldZ]}>
-              <boxGeometry args={[CELL_SIZE * 0.82, WALL_HEIGHT, CELL_SIZE * 0.82]} />
-              <meshStandardMaterial color="#7c3aed" emissive="#4c1d95" emissiveIntensity={0.7} roughness={0.25} metalness={0.1} />
-            </mesh>
-            <pointLight position={[exitWorldX, 1.5, exitWorldZ]} color="#7c3aed" intensity={1.8} distance={5} />
-          </>
+          <ExitBarrier
+            exitWorldX={exitWorldX}
+            exitWorldZ={exitWorldZ}
+            wallHeight={WALL_HEIGHT}
+            cellSize={CELL_SIZE}
+          />
         )}
 
         {exitUnlocked && (
