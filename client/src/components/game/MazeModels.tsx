@@ -36,9 +36,13 @@ function GltfModel({
 export function MazeWallPiece({
   position,
   size,
+  color = "#7dd3fc",
+  emissive = "#0ea5e9",
 }: {
   position: Vec3;
   size: Vec3;
+  color?: string;
+  emissive?: string;
 }) {
   if (WALL_MODEL_URL) {
     return <GltfModel url={WALL_MODEL_URL} position={position} scale={size} />;
@@ -48,8 +52,8 @@ export function MazeWallPiece({
     <mesh position={position} castShadow receiveShadow>
       <boxGeometry args={size} />
       <meshStandardMaterial
-        color="#7dd3fc"
-        emissive="#0ea5e9"
+        color={color}
+        emissive={emissive}
         emissiveIntensity={0.16}
         roughness={0.42}
         metalness={0.22}

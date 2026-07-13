@@ -50,6 +50,26 @@ const OVERHEAD_FOV = 46;
 const FP_MOUSE_SENSITIVITY = 0.0032; // radians per pixel of mouse movement
 const FP_PITCH_LIMIT = 0.6; // how far you can look up/down (radians)
 
+// Quadrant wall colors - each quarter of the maze glows a different hue for orientation
+// [surface color, emissive glow] pairs; index 0 keeps the original blue
+const QUADRANT_WALL_COLORS: Array<[string, string]> = [
+  ["#7dd3fc", "#0ea5e9"], // blue
+  ["#f9a8d4", "#db2777"], // pink
+  ["#fcd34d", "#d97706"], // amber
+  ["#c4b5fd", "#7c3aed"], // violet
+];
+
+// Graffiti drawing - hold left-click to draw on a wall (spray-can style in first
+// person: hold and move your view). Right-click drags a chunky eraser.
+const GRAFFITI_RANGE = 1.9; // how close (in cells) a wall must be to draw on it
+const GRAFFITI_FALLBACK_COLOR = "#94a3b8"; // strokes left by players who disconnected
+const GRAFFITI_CANVAS_PX_PER_UNIT = 128; // texture resolution of the drawing surface
+const GRAFFITI_BRUSH_PX = 12; // pen thickness in canvas pixels
+const GRAFFITI_ERASER_PX = 44; // medium eraser circle - clears fast without wiping everything
+const GRAFFITI_MIN_POINT_DISTANCE = 0.015; // min uv movement before recording another point
+const GRAFFITI_MAX_POINTS = 64; // per stroke; longer drags auto-split into new strokes
+const GRAFFITI_PENDING_MS = 1500; // keep your just-sent stroke visible until the server echoes it
+
 const CONTROL_CODES = {
   up: ["KeyW", "ArrowUp"],
   down: ["KeyS", "ArrowDown"],
@@ -246,6 +266,124 @@ function MazeCamera({
   return null;
 }
 
+interface GraffitiStrokeData {
+  id: string;
+  sessionId: string;
+  eraser: boolean;
+  side: number; // which wall face the stroke lives on: 1 or -1
+  points: number[]; // flat [u0, v0, u1, v1, ...] in wall-face coordinates (0..1)
+}
+
+function drawStrokesToCanvas(
+  ctx: CanvasRenderingContext2D,
+  strokes: GraffitiStrokeData[],
+  colorForSession: (sessionId: string) => string,
+) {
+  const { width, height } = ctx.canvas;
+  ctx.clearRect(0, 0, width, height);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  for (const stroke of strokes) {
+    if (stroke.points.length < 2) continue;
+    ctx.globalCompositeOperation = stroke.eraser ? "destination-out" : "source-over";
+    ctx.strokeStyle = stroke.eraser ? "#000" : colorForSession(stroke.sessionId);
+    ctx.lineWidth = stroke.eraser ? GRAFFITI_ERASER_PX : GRAFFITI_BRUSH_PX;
+    ctx.beginPath();
+    ctx.moveTo(stroke.points[0] * width, stroke.points[1] * height);
+    if (stroke.points.length === 2) {
+      ctx.lineTo(stroke.points[0] * width + 0.01, stroke.points[1] * height); // single click = dot
+    }
+    for (let p = 2; p < stroke.points.length; p += 2) {
+      ctx.lineTo(stroke.points[p] * width, stroke.points[p + 1] * height);
+    }
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = "source-over";
+}
+
+function GraffitiWall({
+  segment,
+  strokes,
+  colorForSession,
+}: {
+  segment: WallSegment;
+  strokes: GraffitiStrokeData[];
+  colorForSession: (sessionId: string) => string;
+}) {
+  const alongX = segment.size[0] > segment.size[2];
+  const faceLength = alongX ? segment.size[0] : segment.size[2];
+  const faceHeight = segment.size[1];
+  const faceOffset = (alongX ? segment.size[2] : segment.size[0]) / 2 + 0.018;
+  // -PI/2 (not +PI/2) so the canvas "u" axis lines up with world +z on north-south walls
+  const rotY = alongX ? 0 : -Math.PI / 2;
+
+  // One canvas per wall FACE, so drawing on one side never shows on the other.
+  // Keyed on stable primitives (not array identity) so canvases survive parent re-renders.
+  const faces = useMemo(() => {
+    return [1, -1].map((side) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(faceLength * GRAFFITI_CANVAS_PX_PER_UNIT);
+      canvas.height = Math.round(faceHeight * GRAFFITI_CANVAS_PX_PER_UNIT);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      return { side, canvas, texture };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segment.key, faceLength, faceHeight]);
+
+  useEffect(() => () => faces.forEach((face) => face.texture.dispose()), [faces]);
+
+  useEffect(() => {
+    for (const face of faces) {
+      const ctx = face.canvas.getContext("2d");
+      if (!ctx) continue;
+      drawStrokesToCanvas(ctx, strokes.filter((stroke) => stroke.side === face.side), colorForSession);
+      face.texture.needsUpdate = true;
+    }
+  }, [colorForSession, faces, strokes]);
+
+  return (
+    <group position={[segment.position[0], segment.position[1], segment.position[2]]} rotation={[0, rotY, 0]}>
+      {faces.map((face) => (
+        <mesh
+          key={face.side}
+          position={[0, 0, face.side * faceOffset]}
+          rotation={[0, face.side === 1 ? 0 : Math.PI, 0]}
+        >
+          <planeGeometry args={[faceLength, faceHeight]} />
+          <meshBasicMaterial map={face.texture} transparent depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// Small white aiming dot shown only in first person, so you can see where the
+// spray can (and your view) is pointed
+function FpCrosshair({ firstPersonRef }: { firstPersonRef: MutableRefObject<boolean> }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
+  const direction = useMemo(() => new THREE.Vector3(), []);
+
+  useFrame(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    mesh.visible = firstPersonRef.current;
+    if (!mesh.visible) return;
+    camera.getWorldDirection(direction);
+    mesh.position.copy(camera.position).addScaledVector(direction, 0.5);
+    mesh.quaternion.copy(camera.quaternion);
+  });
+
+  return (
+    <mesh ref={meshRef} renderOrder={999} visible={false}>
+      <circleGeometry args={[0.0045, 12]} />
+      <meshBasicMaterial color="#ffffff" transparent opacity={0.9} depthTest={false} depthWrite={false} />
+    </mesh>
+  );
+}
+
 function PlayerToken({
   player,
   index,
@@ -395,7 +533,7 @@ export function MazeBoard({
   const gridSpan = Math.max(boardWidth, boardDepth);
   const [startWorldX, startWorldZ] = cellToWorld(gridWidth, gridHeight, startX, startY);
   const [exitWorldX, exitWorldZ] = cellToWorld(gridWidth, gridHeight, exitX, exitY);
-  const { gl } = useThree();
+  const { gl, camera } = useThree();
   const currentPlayer = currentSessionId ? players.get(currentSessionId) : undefined;
   const localPositionRef = useRef<LocalPosition>({
     x: currentPlayer?.x ?? startX,
@@ -409,6 +547,65 @@ export function MazeBoard({
   const lastSentAtRef = useRef(0);
   const lastSentPositionRef = useRef<LocalPosition>({ x: Number.NaN, y: Number.NaN });
   const lastMazeSignatureRef = useRef("");
+
+  const [graffiti, setGraffiti] = useState<Array<GraffitiStrokeData & { wallKey: string }>>([]);
+  // Your stroke while still dragging - previewed locally before it's sent
+  const [preview, setPreview] = useState<(GraffitiStrokeData & { wallKey: string }) | null>(null);
+  // Just-released strokes kept visible until the server echoes them back (prevents blink)
+  const [pendingStrokes, setPendingStrokes] = useState<Array<GraffitiStrokeData & { wallKey: string }>>([]);
+  const drawingRef = useRef<{ wallKey: string; side: number; eraser: boolean; points: number[] } | null>(null);
+  const pendingCounterRef = useRef(0);
+
+  // Mirror the server's graffiti strokes into local state whenever the room state changes
+  useEffect(() => {
+    if (!room) return;
+
+    const readGraffiti = () => {
+      const map = (room.state as {
+        graffiti?: {
+          forEach: (
+            cb: (stroke: { wallKey?: string; sessionId?: string; eraser?: boolean; points?: { toArray?: () => number[] } | number[] }, key: string) => void,
+          ) => void;
+        };
+      }).graffiti;
+      if (!map) return;
+
+      const next: Array<GraffitiStrokeData & { wallKey: string }> = [];
+      map.forEach((stroke, key) => {
+        const rawPoints = stroke?.points;
+        const points = Array.isArray(rawPoints)
+          ? rawPoints.slice()
+          : rawPoints && typeof rawPoints.toArray === "function"
+            ? rawPoints.toArray()
+            : Array.from((rawPoints as unknown as Iterable<number>) ?? []);
+        next.push({
+          id: key,
+          wallKey: stroke?.wallKey ?? "",
+          sessionId: stroke?.sessionId ?? "",
+          eraser: stroke?.eraser === true,
+          side: (stroke as { side?: number })?.side === -1 ? -1 : 1,
+          points,
+        });
+      });
+      next.sort((a, b) => a.id.localeCompare(b.id));
+
+      setGraffiti((prev) => {
+        if (
+          prev.length === next.length &&
+          prev.every((p, k) => p.id === next[k].id && p.points.length === next[k].points.length)
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    };
+
+    readGraffiti();
+    room.onStateChange(readGraffiti);
+    return () => {
+      room.onStateChange.remove(readGraffiti);
+    };
+  }, [room]);
 
   const wallSegments = useMemo<WallSegment[]>(() => {
     if (!hasMaze) return [];
@@ -455,12 +652,40 @@ export function MazeBoard({
     }
 
     return segments;
-  }, [gridHeight, gridWidth, hasMaze, mazeWalls]);
+    // seed + dimensions uniquely identify a maze, so this stays stable across
+    // re-renders even when the parent passes a fresh mazeWalls array each patch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridHeight, gridWidth, hasMaze, seed, mazeWalls.length]);
 
   const orderedPlayers = useMemo(
     () => Array.from(players.entries()).sort(([a], [b]) => a.localeCompare(b)),
     [players],
   );
+  const colorForSession = useMemo(() => {
+    const colorBySession = new Map(
+      orderedPlayers.map(([sessionId], index) => [sessionId, PLAYER_COLORS[index % PLAYER_COLORS.length]]),
+    );
+    return (sessionId: string) => colorBySession.get(sessionId) ?? GRAFFITI_FALLBACK_COLOR;
+  }, [orderedPlayers]);
+
+  const strokesByWall = useMemo(() => {
+    const byWall = new Map<string, GraffitiStrokeData[]>();
+    const add = (stroke: GraffitiStrokeData & { wallKey: string }) => {
+      const list = byWall.get(stroke.wallKey);
+      if (list) list.push(stroke);
+      else byWall.set(stroke.wallKey, [stroke]);
+    };
+    graffiti.forEach(add);
+    pendingStrokes.forEach(add);
+    if (preview && preview.points.length >= 2) add(preview);
+    return byWall;
+  }, [graffiti, pendingStrokes, preview]);
+
+  const wallSegmentByKey = useMemo(
+    () => new Map(wallSegments.map((segment) => [segment.key, segment])),
+    [wallSegments],
+  );
+
   const followedPlayer = currentPlayer ?? orderedPlayers[0]?.[1];
   const [followWorldX, followWorldZ] = cellToWorld(
     gridWidth,
@@ -573,6 +798,228 @@ export function MazeBoard({
       if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
   }, [gl, room]);
+
+  // Graffiti drawing: hold left-click to draw on a nearby wall, right-click to erase.
+  // In first person (mouse captured) you paint with the crosshair like a spray can;
+  // in overhead you draw with the cursor like MS Paint.
+  useEffect(() => {
+    if (!room) return;
+    const canvas = gl.domElement;
+    const raycaster = new THREE.Raycaster();
+    const box = new THREE.Box3();
+    const boxCenter = new THREE.Vector3();
+    const boxSize = new THREE.Vector3();
+    const hitPoint = new THREE.Vector3();
+    const lookDirection = new THREE.Vector3();
+
+    // Convert a wall hit into canvas coordinates (u, v in 0..1) plus which face was
+    // hit: 1 = the face the canvas maps to directly, -1 = the mirrored back face
+    // (strokes drawn there get u flipped so they land exactly where you aimed)
+    const hitToWallUv = (segment: WallSegment, hit: THREE.Vector3): [number, number, number] => {
+      const alongX = segment.size[0] > segment.size[2];
+      const length = alongX ? segment.size[0] : segment.size[2];
+      const along = alongX
+        ? hit.x - (segment.position[0] - length / 2)
+        : hit.z - (segment.position[2] - length / 2);
+      const u = Math.min(1, Math.max(0, along / length));
+      const heightFromTop = segment.position[1] + segment.size[1] / 2 - hit.y;
+      const v = Math.min(1, Math.max(0, heightFromTop / segment.size[1]));
+      const side = alongX
+        ? (hit.z >= segment.position[2] ? 1 : -1)
+        : (hit.x <= segment.position[0] ? 1 : -1);
+      return [u, v, side];
+    };
+
+    const castAtWalls = (event?: MouseEvent): { key: string; u: number; v: number; side: number } | null => {
+      const locked = document.pointerLockElement === canvas;
+
+      if (firstPersonRef.current && locked) {
+        camera.getWorldDirection(lookDirection);
+        raycaster.set(camera.position, lookDirection);
+      } else if (firstPersonRef.current && !locked) {
+        return null; // click is re-capturing the mouse, not drawing
+      } else {
+        if (!event) return null;
+        const rect = canvas.getBoundingClientRect();
+        const ndc = new THREE.Vector2(
+          ((event.clientX - rect.left) / rect.width) * 2 - 1,
+          -((event.clientY - rect.top) / rect.height) * 2 + 1,
+        );
+        raycaster.setFromCamera(ndc, camera);
+      }
+
+      const [playerWorldX, playerWorldZ] = cellToWorld(
+        gridWidth,
+        gridHeight,
+        localPositionRef.current.x,
+        localPositionRef.current.y,
+      );
+
+      let best: { key: string; u: number; v: number; side: number } | null = null;
+      let bestDistance = Infinity;
+
+      for (const segment of wallSegments) {
+        const nearDx = segment.position[0] - playerWorldX;
+        const nearDz = segment.position[2] - playerWorldZ;
+        if (Math.hypot(nearDx, nearDz) > CELL_SIZE * GRAFFITI_RANGE) continue;
+
+        boxCenter.set(segment.position[0], segment.position[1], segment.position[2]);
+        boxSize.set(segment.size[0], segment.size[1], segment.size[2]);
+        box.setFromCenterAndSize(boxCenter, boxSize);
+
+        if (raycaster.ray.intersectBox(box, hitPoint)) {
+          const distance = hitPoint.distanceTo(raycaster.ray.origin);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            const [u, v, side] = hitToWallUv(segment, hitPoint);
+            best = { key: segment.key, u, v, side };
+          }
+        }
+      }
+
+      return best;
+    };
+
+    const publishPreview = () => {
+      const active = drawingRef.current;
+      setPreview(
+        active
+          ? {
+              id: "__preview__",
+              wallKey: active.wallKey,
+              sessionId: currentSessionId ?? "",
+              eraser: active.eraser,
+              side: active.side,
+              points: active.points.slice(),
+            }
+          : null,
+      );
+    };
+
+    const finalizeStroke = () => {
+      const active = drawingRef.current;
+      drawingRef.current = null;
+      publishPreview();
+      if (!active || active.points.length < 2) return;
+
+      room.send("drawStroke", {
+        wallKey: active.wallKey,
+        points: active.points,
+        eraser: active.eraser,
+        side: active.side,
+      });
+
+      // Keep it visible locally until the server echoes it back, so it doesn't blink
+      pendingCounterRef.current += 1;
+      const pendingId = `pending-${pendingCounterRef.current}`;
+      setPendingStrokes((prev) => [
+        ...prev,
+        {
+          id: pendingId,
+          wallKey: active.wallKey,
+          sessionId: currentSessionId ?? "",
+          eraser: active.eraser,
+          side: active.side,
+          points: active.points.slice(),
+        },
+      ]);
+      window.setTimeout(() => {
+        setPendingStrokes((prev) => prev.filter((stroke) => stroke.id !== pendingId));
+      }, GRAFFITI_PENDING_MS);
+    };
+
+    // The mirrored back face needs its u flipped so strokes land where you aim
+    const storedU = (u: number, side: number) => (side === -1 ? 1 - u : u);
+
+    const appendPoint = (hit: { key: string; u: number; v: number; side: number }) => {
+      const active = drawingRef.current;
+      if (!active) return;
+
+      if (active.wallKey !== hit.key || active.side !== hit.side) {
+        // dragged onto a different wall or around to the other face -
+        // finish this stroke and start a new one there
+        const eraser = active.eraser;
+        finalizeStroke();
+        drawingRef.current = {
+          wallKey: hit.key,
+          side: hit.side,
+          eraser,
+          points: [storedU(hit.u, hit.side), hit.v],
+        };
+        publishPreview();
+        return;
+      }
+
+      const u = storedU(hit.u, active.side);
+      const count = active.points.length;
+      const du = u - active.points[count - 2];
+      const dv = hit.v - active.points[count - 1];
+      if (Math.hypot(du, dv) < GRAFFITI_MIN_POINT_DISTANCE) return;
+
+      active.points.push(u, hit.v);
+      if (active.points.length >= GRAFFITI_MAX_POINTS * 2) {
+        // long drag - send this chunk and keep drawing seamlessly from the same point
+        const eraser = active.eraser;
+        const wall = active.wallKey;
+        const side = active.side;
+        finalizeStroke();
+        drawingRef.current = { wallKey: wall, side, eraser, points: [u, hit.v] };
+      }
+      publishPreview();
+    };
+
+    const handleMouseDown = (event: MouseEvent) => {
+      const draw = event.button === 0;
+      const erase = event.button === 2;
+      if (!draw && !erase) return;
+
+      const hit = castAtWalls(event);
+      if (!hit) return;
+
+      drawingRef.current = {
+        wallKey: hit.key,
+        side: hit.side,
+        eraser: erase,
+        points: [storedU(hit.u, hit.side), hit.v],
+      };
+      publishPreview();
+    };
+
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!drawingRef.current) return;
+      if (firstPersonRef.current && document.pointerLockElement === canvas) return; // FP samples per-frame instead
+      const hit = castAtWalls(event);
+      if (hit) appendPoint(hit);
+    };
+
+    const handleMouseUp = () => finalizeStroke();
+    const handleContextMenu = (event: Event) => event.preventDefault();
+
+    // In first person the crosshair is fixed at screen center, so sample the aim
+    // point continuously while the button is held (the view moves, not the cursor)
+    let frameId = 0;
+    const sampleWhileDrawingFp = () => {
+      frameId = requestAnimationFrame(sampleWhileDrawingFp);
+      if (!drawingRef.current) return;
+      if (!firstPersonRef.current || document.pointerLockElement !== canvas) return;
+      const hit = castAtWalls();
+      if (hit) appendPoint(hit);
+    };
+    frameId = requestAnimationFrame(sampleWhileDrawingFp);
+
+    canvas.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    canvas.addEventListener("contextmenu", handleContextMenu);
+    return () => {
+      cancelAnimationFrame(frameId);
+      drawingRef.current = null;
+      canvas.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      canvas.removeEventListener("contextmenu", handleContextMenu);
+    };
+  }, [camera, currentSessionId, gl, gridHeight, gridWidth, room, wallSegments]);
 
   useEffect(() => {
     if (!room) return;
@@ -737,6 +1184,7 @@ export function MazeBoard({
         fpYawRef={fpYawRef}
         fpPitchRef={fpPitchRef}
       />
+      <FpCrosshair firstPersonRef={firstPersonRef} />
       <fog attach="fog" args={["#030712", 20, 62]} />
 
       <ambientLight intensity={0.72} />
@@ -782,7 +1230,41 @@ export function MazeBoard({
           </>
         )}
 
-        {wallSegments.map((wall) => <MazeWallPiece key={wall.key} position={wall.position} size={wall.size} />)}
+        {wallSegments.map((wall) => {
+          const quadrant = (wall.position[0] >= 0 ? 1 : 0) + (wall.position[2] >= 0 ? 2 : 0);
+          const [wallColor, wallEmissive] = QUADRANT_WALL_COLORS[quadrant];
+          // Collinear neighbor walls overlap slightly at corners; where two quadrant
+          // colors meet, their coplanar faces z-fight. A tiny per-quadrant thickness
+          // difference (up to ~12mm in game units) separates the faces invisibly.
+          const alongX = wall.size[0] > wall.size[2];
+          const thickness = (alongX ? wall.size[2] : wall.size[0]) + quadrant * 0.004;
+          const adjustedSize: [number, number, number] = alongX
+            ? [wall.size[0], wall.size[1], thickness]
+            : [thickness, wall.size[1], wall.size[2]];
+          return (
+            <MazeWallPiece
+              key={wall.key}
+              position={wall.position}
+              size={adjustedSize}
+              color={wallColor}
+              emissive={wallEmissive}
+            />
+          );
+        })}
+
+        {/* Shared freeform graffiti, one drawing surface per wall that has strokes */}
+        {Array.from(strokesByWall.entries()).map(([wallKey, wallStrokes]) => {
+          const segment = wallSegmentByKey.get(wallKey);
+          if (!segment) return null;
+          return (
+            <GraffitiWall
+              key={wallKey}
+              segment={segment}
+              strokes={wallStrokes}
+              colorForSession={colorForSession}
+            />
+          );
+        })}
 
         <MazeCollectibles
           collectibles={collectibles}

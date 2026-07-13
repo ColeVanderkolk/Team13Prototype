@@ -14,6 +14,16 @@ export class Collectible extends Schema {
     @type("number") score: number = 0; 
 }
 
+export class GraffitiStroke extends Schema {
+    @type("string") wallKey: string = "";
+    @type("string") sessionId: string = "";
+    @type("boolean") eraser: boolean = false;
+    // Which wall face the stroke lives on: 1 or -1
+    @type("number") side: number = 1;
+    // Flat [u0, v0, u1, v1, ...] pairs in wall-face coordinates (0..1)
+    @type(["number"]) points = new ArraySchema<number>();
+}
+
 export class GameState extends Schema {
     // TODO: fill this out
     @type({ map : Player }) players = new MapSchema<Player>();
@@ -89,4 +99,7 @@ export class GameState extends Schema {
     @type(["number"]) stageThresholds = new ArraySchema<number>(); // unsure if this is needed
 
     @type("number") seed: number = 0;
+
+    // Shared freeform wall graffiti, keyed by stroke id
+    @type({ map: GraffitiStroke }) graffiti = new MapSchema<GraffitiStroke>();
 }
