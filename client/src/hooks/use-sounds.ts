@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState } from "react";
 
-const SOUNDS = ["move", "ping", "activate", "deactivate", "gold", "vote", "clear", "abandon"] as const;
+const SOUNDS = ["move", "ping", "activate", "deactivate", "gold", "vote", "clear", "abandon", "unlock", "portal", "lightSwitch"] as const;
 type SoundName = (typeof SOUNDS)[number];
 
 export const useSounds = () => {
@@ -9,6 +9,8 @@ export const useSounds = () => {
   const [sfxVolume, setSfxVolumeState] = useState(0.25);
 
   if (!audioRef.current) {
+    // Algorithm: preload each sound effect once so it can be replayed instantly during gameplay.
+    // Each entry maps a gameplay event name to a browser Audio object that is cached in memory.
     audioRef.current = {
       move: new Audio("/sounds/move.mp3"),
       ping: new Audio("/sounds/ping.mp3"),
@@ -18,6 +20,9 @@ export const useSounds = () => {
       vote: new Audio("/sounds/vote.mp3"),
       clear: new Audio("/sounds/clear.mp3"),
       abandon: new Audio("/sounds/abandon.mp3"),
+      unlock: new Audio("/sounds/unlock.mp3"),
+      portal: new Audio("/sounds/portal.mp3"),
+      lightSwitch: new Audio("/sounds/light-switch.mp3"),
     };
     for (const sound of Object.values(audioRef.current)) {
       sound.preload = "auto";
@@ -26,6 +31,8 @@ export const useSounds = () => {
 
   const play = useCallback((name: SoundName) => {
     const audio = audioRef.current![name];
+    // Algorithm: when an event fires, reset the clip to the beginning and play it immediately.
+    // This makes repeated feedback feel responsive instead of overlapping with a previous playback.
     audio.volume = volumeRef.current;
     audio.currentTime = 0;
     audio.play().catch(() => {});

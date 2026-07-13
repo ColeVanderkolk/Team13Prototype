@@ -251,6 +251,8 @@ const Index = () => {
   // UI-only state (not server-synced)
   const [showGo, setShowGo] = useState(false);
   const prevCountdownRef = useRef(0);
+  const prevExitUnlockedRef = useRef(initialGameState.exitUnlocked);
+  const prevStageRef = useRef(initialGameState.stage);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const resultsReasonRef = useRef<"gameover" | "abandoned">("gameover");
@@ -283,6 +285,23 @@ const Index = () => {
       return () => clearTimeout(timer);
     }
   }, [gameState.countdown, playSound]);
+
+  useEffect(() => {
+    // Algorithm: the server unlocks the door once the objective is solved.
+    // The client listens for the transition from locked to unlocked and plays the unlock fanfare once.
+    if (!prevExitUnlockedRef.current && gameState.exitUnlocked) {
+      playSound("unlock");
+    }
+    prevExitUnlockedRef.current = gameState.exitUnlocked;
+  }, [gameState.exitUnlocked, playSound]);
+
+  useEffect(() => {
+    // Algorithm: when the stage counter increases, treat it as a new level start and play the portal sound once.
+    if (gameState.stage > prevStageRef.current) {
+      playSound("portal");
+    }
+    prevStageRef.current = gameState.stage;
+  }, [gameState.stage, playSound]);
 
   const createStateUpdater = useCallback((gameRoom: Client.Room<ServerGameState>) => () => {
     if (!gameRoom.state) return;

@@ -7,6 +7,7 @@ import { MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
 import { Keys } from "./Keys";
+import { useSounds } from "@/hooks/use-sounds";
 
 const WALL_NORTH = 1;
 const WALL_EAST = 2;
@@ -534,6 +535,7 @@ export function MazeBoard({
   const [startWorldX, startWorldZ] = cellToWorld(gridWidth, gridHeight, startX, startY);
   const [exitWorldX, exitWorldZ] = cellToWorld(gridWidth, gridHeight, exitX, exitY);
   const { gl, camera } = useThree();
+  const { play: playSound } = useSounds();
   const currentPlayer = currentSessionId ? players.get(currentSessionId) : undefined;
   const localPositionRef = useRef<LocalPosition>({
     x: currentPlayer?.x ?? startX,
@@ -748,8 +750,12 @@ export function MazeBoard({
         return;
       }
       if (event.code === "KeyE") {
-        // interact: attempt to pull whichever lever is closest, in range — never triggered by just walking near one
-        if (!event.repeat) room?.send("pullLever");
+        // Algorithm: on a fresh interact press, trigger the switch sound once and send the lever action.
+        // The repeat guard prevents the sound from spamming while the key is held down.
+        if (!event.repeat) {
+          playSound("lightSwitch");
+          room?.send("pullLever");
+        }
         return;
       }
       if (!isControlKey(event)) return;
