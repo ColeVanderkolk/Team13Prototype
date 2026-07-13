@@ -61,6 +61,17 @@ interface ServerGameState {
     plate1Y: number;
     plate2X: number;
     plate2Y: number;
+
+    keysRequired: number;
+    key0X: number;
+    key0Y: number;
+    key1X: number;
+    key1Y: number;
+    key2X: number;
+    key2Y: number;
+    allKeysCollected: boolean;
+    keysCollectedMask: number;
+
     obstacleType: string;
     playersAtExit: number;
     leversTotal: number;
@@ -90,6 +101,8 @@ interface GameStateLocal {
   exitX: number;
   exitY: number;
   exitUnlocked: boolean;
+
+  // pressure plates
   pressurePlatesRequired: number;
   pressurePlatesActivated: number;
   plate0X: number;
@@ -98,6 +111,18 @@ interface GameStateLocal {
   plate1Y: number;
   plate2X: number;
   plate2Y: number;
+
+  // keys
+  keysRequired: number;
+  key0X: number;
+  key0Y: number;
+  key1X: number;
+  key1Y: number;
+  key2X: number;
+  key2Y: number;
+  allKeysCollected: boolean;
+  keysCollectedMask: number; 
+
   obstacleType: string;
   playersAtExit: number;
   leversTotal: number;
@@ -123,7 +148,6 @@ type GameAction =
 | { type:"SYNC_STATE"; payload: GameStateLocal }
 | { type: "SET_PLAYER_COUNT"; payload: { count: number; required: number }};
 
-// TODO: set the values according to actual game, rather than placeholder values
 const initialGameState: GameStateLocal = {
     gridWidth: 10,
     gridHeight: 8,
@@ -133,6 +157,7 @@ const initialGameState: GameStateLocal = {
     exitX: 9,
     exitY: 7,
     exitUnlocked: true,
+
     pressurePlatesRequired: 0,
     pressurePlatesActivated: 0,
     plate0X: -1,
@@ -141,6 +166,17 @@ const initialGameState: GameStateLocal = {
     plate1Y: -1,
     plate2X: -1,
     plate2Y: -1,
+
+    keysRequired: 0,
+    key0X: -1,
+    key0Y: -1,
+    key1X: -1,
+    key1Y: -1,
+    key2X: -1,
+    key2Y: -1,
+    allKeysCollected: false,
+    keysCollectedMask: 0,
+
     obstacleType: "pressurePlates",
     playersAtExit: 0,
     leversTotal: 0,
@@ -295,6 +331,18 @@ const Index = () => {
           plate1Y: gameRoom.state.plate1Y ?? -1,
           plate2X: gameRoom.state.plate2X ?? -1,
           plate2Y: gameRoom.state.plate2Y ?? -1,
+
+          keysRequired: gameRoom.state.keysRequired || 0,
+          key0X: gameRoom.state.key0X ?? -1,
+          key0Y: gameRoom.state.key0Y ?? -1,
+          key1X: gameRoom.state.key1X ?? -1,
+          key1Y: gameRoom.state.key1Y ?? -1,
+          key2X: gameRoom.state.key2X ?? -1,
+          key2Y: gameRoom.state.key2Y ?? -1,
+
+          allKeysCollected: gameRoom.state.allKeysCollected || false,
+          keysCollectedMask: gameRoom.state.keysCollectedMask || 0,
+
           obstacleType: gameRoom.state.obstacleType || "pressurePlates",
           playersAtExit: gameRoom.state.playersAtExit || 0,
           leversTotal: gameRoom.state.leversTotal || 0,
@@ -575,7 +623,31 @@ const Index = () => {
           room?.leave();
           resultsReasonRef.current = "abandoned";
           setShowResults(true);
-        } } isSoloMode={initPayload?.soloMode || false} pressurePlatesRequired={gameState.pressurePlatesRequired} plate0X={gameState.plate0X} plate0Y={gameState.plate0Y} plate1X={gameState.plate1X} plate1Y={gameState.plate1Y} plate2X={gameState.plate2X} plate2Y={gameState.plate2Y} obstacleType={gameState.obstacleType} playersAtExit={gameState.playersAtExit} leversTotal={gameState.leversTotal} leversPulledInOrder={gameState.leversPulledInOrder} leverCellX={gameState.leverCellX} leverCellY={gameState.leverCellY} leverWallDir={gameState.leverWallDir} />
+        } } isSoloMode={initPayload?.soloMode || false}
+        pressurePlatesRequired={gameState.pressurePlatesRequired}
+        plate0X={gameState.plate0X}
+        plate0Y={gameState.plate0Y}
+        plate1X={gameState.plate1X}
+        plate1Y={gameState.plate1Y}
+        plate2X={gameState.plate2X}
+        plate2Y={gameState.plate2Y}
+        obstacleType={gameState.obstacleType}
+        playersAtExit={gameState.playersAtExit}
+        leversTotal={gameState.leversTotal}
+        leversPulledInOrder={gameState.leversPulledInOrder}
+        leverCellX={gameState.leverCellX}
+        leverCellY={gameState.leverCellY}
+        leverWallDir={gameState.leverWallDir}
+        keysRequired={gameState.keysRequired}
+        key0X={gameState.key0X}
+        key0Y={gameState.key0Y}
+        key1X={gameState.key1X}
+        key1Y={gameState.key1Y}
+        key2X={gameState.key2X}
+        key2Y={gameState.key2Y}
+        allKeysCollected={gameState.allKeysCollected}
+        keysCollectedMask={gameState.keysCollectedMask}
+        />
       {/* TODO: revert — temporarily showing overlay in solo mode */}
       {(gameState.countdown > 0 || showGo) && (() => {
         const from = 10;

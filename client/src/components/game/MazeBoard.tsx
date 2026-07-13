@@ -6,6 +6,7 @@ import { MazeCollectibles } from "./MazeCollectibles";
 import { MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
+import { Keys } from "./Keys";
 
 const WALL_NORTH = 1;
 const WALL_EAST = 2;
@@ -85,6 +86,8 @@ interface MazeBoardProps {
   room: Client.Room | null;
   countdown?: number;
   currentSessionId?: string | null;
+
+  // preessure plates
   pressurePlatesRequired: number;
   plate0X: number;
   plate0Y: number;
@@ -92,6 +95,18 @@ interface MazeBoardProps {
   plate1Y: number;
   plate2X: number;
   plate2Y: number;
+
+  // keys
+  keysRequired: number;
+  key0X: number;
+  key0Y: number;
+  key1X: number;
+  key1Y: number;
+  key2X: number;
+  key2Y: number;
+  allKeysCollected: boolean;
+  keysCollectedMask: number;
+
   obstacleType: string;
   playersAtExit: number;
   leversTotal: number;
@@ -345,6 +360,7 @@ export function MazeBoard({
   room,
   countdown,
   currentSessionId,
+
   pressurePlatesRequired,
   plate0X,
   plate0Y,
@@ -352,6 +368,17 @@ export function MazeBoard({
   plate1Y,
   plate2X,
   plate2Y,
+
+  keysRequired,
+  key0X,
+  key0Y,
+  key1X,
+  key1Y,
+  key2X,
+  key2Y,
+  allKeysCollected,
+  keysCollectedMask,
+
   obstacleType,
   playersAtExit,
   leversTotal,
@@ -778,7 +805,7 @@ export function MazeBoard({
           />
         ))}
 
-        {obstacleType === "pressurePlates" && (
+        {(obstacleType === "pressurePlates" || obstacleType === "keys") && (
           <PressurePlates
             plates={[
               { gridX: plate0X, gridY: plate0Y },
@@ -789,6 +816,8 @@ export function MazeBoard({
             gridHeight={gridHeight}
             players={players}
             pressurePlatesRequired={pressurePlatesRequired}
+            obstacleType={obstacleType}
+            keysCollectedMask={keysCollectedMask}
           />
         )}
 
@@ -801,6 +830,22 @@ export function MazeBoard({
             gridHeight={gridHeight}
             leversPulledInOrder={leversPulledInOrder}
             wrongPullKey={leverWrongPullKey}
+          />
+        )}
+
+        {obstacleType === "keys" && (
+          <Keys
+            keys={[
+              {gridX: key0X, gridY: key0Y},
+              {gridX: key1X, gridY: key1Y},
+              {gridX: key2X, gridY: key2Y},
+            ].filter(k => k.gridX >= 0)}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            players={players}
+            localSessionId={currentSessionId ?? ""}
+            keysRequired={keysRequired}
+            onKeyCollected={(index) => room?.send("collectKey", {index})}
           />
         )}
       </group>
