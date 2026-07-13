@@ -766,16 +766,12 @@ const Index = () => {
           </div>
         </div>
       )}
-      {/* {showResults && (
+      {showResults && (
         <ResultsOverlay
           totalScore={gameState.totalScore}
           stage={gameState.stage}
-          soloMode={initPayload?.soloMode || false}
           reason={resultsReasonRef.current}
           returnUrl={returnUrl}
-          players={Array.from(gameState.players.values()).map((p) => ({
-            name: p.name
-          }))}
           onBack={() => {
             if (returnUrl) {
               window.location.href = returnUrl;
@@ -784,7 +780,7 @@ const Index = () => {
             }
           }}
         />
-      )} */}
+      )}
     </div>
   );
 };

@@ -196,7 +196,12 @@ export class GameRoom extends Room<GameState> {
 
         console.log("Game ended! Final score: ", this.state.totalScore);
 
-        this.disconnect(); 
+        // give the isGameOver patch time to actually reach every client before the connection
+        // closes — disconnecting immediately can race the state broadcast, leaving a client
+        // stuck on a frozen screen that never learns the game ended
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        this.disconnect();
     }
 
     private generateInitialCollectibles() {

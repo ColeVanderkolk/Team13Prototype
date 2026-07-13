@@ -1,42 +1,24 @@
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { getPlayerTailwindTextClass } from "@/constants/playerColors";
 import { HudCornerLs, POLAR_HUD } from "@/components/ui/polar-chrome";
-
-type PlayerColor = "RED" | "GREEN" | "BLUE";
-
-interface PlayerInfo {
-  name: string;
-  school: string;
-  discordName: string;
-  color: PlayerColor;
-}
 
 export interface ResultsOverlayProps {
   totalScore: number;
-  highScore: number;
   stage: number;
-  scores: Record<PlayerColor, number>;
-  soloMode: boolean;
   reason: "gameover" | "abandoned";
   returnUrl?: string | null;
   onBack: () => void;
-  players?: PlayerInfo[];
 }
 
 const labelCls = "text-left font-montreal text-[9px] font-medium uppercase tracking-[0.12em] text-slate-300";
+const valueCls = "font-montreal text-lg font-bold text-white sm:text-xl";
 
 export const ResultsOverlay = ({
   totalScore,
-  highScore,
   stage,
-  scores,
-  soloMode,
   reason,
   returnUrl,
   onBack,
-  players = [],
 }: ResultsOverlayProps) => {
   const [visible, setVisible] = useState(false);
 
@@ -80,47 +62,13 @@ export const ResultsOverlay = ({
 
           <div className="overflow-hidden rounded-none border border-solid ring-1 ring-inset ring-white/[0.04]" style={{ borderColor: POLAR_HUD.border, background: "rgba(255,255,255,0.03)" }}>
             <div className="flex items-center justify-between gap-4 border-b border-white/10 px-3.5 py-2.5 sm:px-4 sm:py-3">
-              <span className={labelCls}>Score</span>
-              <span className="font-montreal text-lg font-bold text-white sm:text-xl">
-                {formatScore(totalScore)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-4 border-b border-white/10 px-3.5 py-2.5 sm:px-4 sm:py-3">
-              <span className={labelCls}>Stage</span>
-              <span className="font-montreal text-lg font-bold text-white sm:text-xl">{stage}</span>
+              <span className={labelCls}>Levels passed</span>
+              <span className={valueCls}>{stage}</span>
             </div>
             <div className="flex items-center justify-between gap-4 px-3.5 py-2.5 sm:px-4 sm:py-3">
-              <span className={labelCls}>High score</span>
-              <span className="font-montreal text-lg font-bold text-white sm:text-xl">
-                {formatScore(highScore)}
-              </span>
+              <span className={labelCls}>Score</span>
+              <span className={valueCls}>{formatScore(totalScore)}</span>
             </div>
-
-            {!soloMode && (
-              <div className="border-t border-white/10">
-                {(["RED", "GREEN", "BLUE"] as const).map((color) => {
-                  const player = players.find((p) => p.color === color);
-                  return (
-                    <div
-                      key={color}
-                      className="flex items-center justify-between gap-4 border-b border-white/[0.06] px-3.5 py-2 sm:px-4 last:border-b-0"
-                    >
-                      <div className="flex flex-col gap-0.5">
-                        <span className={cn("font-montreal text-sm font-semibold", getPlayerTailwindTextClass(color))}>
-                          {player?.name || color}
-                        </span>
-                        {player?.school && (
-                          <span className="text-xs text-slate-500">{player.school}</span>
-                        )}
-                      </div>
-                      <span className="font-montreal text-sm font-semibold text-white">
-                        {formatScore(scores[color])}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
 
           <button
