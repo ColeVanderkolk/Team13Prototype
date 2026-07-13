@@ -136,6 +136,7 @@ interface MazeBoardProps {
   leverWallDir: number[];
   compassYawRef: MutableRefObject<number | null>;
   leverInRangeRef?: MutableRefObject<boolean>;
+  disabled?: boolean; // freezes movement and all interaction — used for the post-game results screen
 }
 
 interface LocalPosition {
@@ -526,7 +527,13 @@ export function MazeBoard({
   leverWallDir,
   compassYawRef,
   leverInRangeRef,
+  disabled = false,
 }: MazeBoardProps) {
+  const disabledRef = useRef(disabled);
+  useEffect(() => {
+    disabledRef.current = disabled;
+  }, [disabled]);
+
   const hasMaze = gridWidth > 0 && gridHeight > 0 && mazeWalls.length === gridWidth * gridHeight;
   const boardWidth = gridWidth * CELL_SIZE;
   const boardDepth = gridHeight * CELL_SIZE;
@@ -758,6 +765,7 @@ export function MazeBoard({
     };
 
     const handleMouseMove = (event: MouseEvent) => {
+      if (disabledRef.current) return;
       if (!firstPersonRef.current) return;
       if (document.pointerLockElement !== canvas) return;
       fpYawRef.current -= event.movementX * FP_MOUSE_SENSITIVITY;
@@ -1078,6 +1086,8 @@ export function MazeBoard({
   ]);
 
   useFrame((state, delta) => {
+    if (disabledRef.current) return;
+
     compassYawRef.current = firstPersonRef.current ? fpYawRef.current : null;
 
     if (leverInRangeRef) {

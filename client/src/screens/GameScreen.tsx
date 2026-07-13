@@ -102,6 +102,7 @@ interface GameScreenProps {
     isDevMode: boolean;
     countdown?: number;
     onGameAbandoned?: ()=> void;
+    showResults?: boolean; // post-game results overlay is showing — freezes movement/interaction
 
     pressurePlatesRequired: number;
     plate0X: number;
@@ -150,6 +151,7 @@ export const GameScreen = ({
     isDevMode,
     countdown,
     onGameAbandoned,
+    showResults,
 
     pressurePlatesRequired,
     plate0X,
@@ -617,6 +619,7 @@ export const GameScreen = ({
           leverWallDir={leverWallDir}
           compassYawRef={compassYawRef}
           leverInRangeRef={leverInRangeRef}
+          disabled={showResults}
         />
 
         <DeferredEffects />

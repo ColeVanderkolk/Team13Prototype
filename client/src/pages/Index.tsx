@@ -619,6 +619,7 @@ const Index = () => {
         isDevMode={initPayload?.devMode || false}
         seed={gameState.seed}
         countdown={gameState.countdown}
+        showResults={showResults}
         onGameAbandoned={() => {
           room?.leave();
           resultsReasonRef.current = "abandoned";
