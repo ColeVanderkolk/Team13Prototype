@@ -1321,12 +1321,13 @@ export function MazeBoard({
               {gridX: key0X, gridY: key0Y},
               {gridX: key1X, gridY: key1Y},
               {gridX: key2X, gridY: key2Y},
-            ].filter(k => k.gridX >= 0)}
+            ]}
             gridWidth={gridWidth}
             gridHeight={gridHeight}
             players={players}
             localSessionId={currentSessionId ?? ""}
             keysRequired={keysRequired}
+            keysCollectedMask={keysCollectedMask}
             onKeyCollected={(index) => room?.send("collectKey", {index})}
           />
         )}

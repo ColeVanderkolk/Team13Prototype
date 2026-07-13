@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -69,6 +69,7 @@ export function Keys({
     players,
     localSessionId,
     keysRequired,
+    keysCollectedMask,
     onKeyCollected,
 } : {
     keys: KeyPos[]
@@ -77,22 +78,27 @@ export function Keys({
     players: Map<string, PlayerPos>;
     localSessionId: string;
     keysRequired: number;
+    keysCollectedMask: number;
     onKeyCollected?: (index: number) => void
-}) { 
-    if (keysRequired === 0) return null; 
+}) {
+    if (keysRequired === 0) return null;
 
     const orderedPlayers = Array.from(players.entries())
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([sessionId, p]) => ({pos: p, sessionId}));
 
-    const [collectedKeys, setCollectedKeys] = useState<Set<number>>(new Set());
+    // authoritative — the server's shared bitmask, so a key collected by one player
+    // disappears for everyone, not just the client that picked it up
+    const isCollected = (index: number) => (keysCollectedMask & (1 << index)) !== 0;
 
     useFrame(() => {
         const localPlayer = players.get(localSessionId);
         if (!localPlayer) return;
 
         keys.forEach((key, index) => {
-            if (collectedKeys.has(index)) return;
+            // empty slot — never placed this level, or already collected (server sets it to -1,-1)
+            if (key.gridX < 0) return;
+            if (isCollected(index)) return;
 
             // only the assigned player can collect their key
             const assignedPlayer = orderedPlayers[index];
@@ -100,7 +106,6 @@ export function Keys({
 
             const dist = Math.hypot(localPlayer.x - key.gridX, localPlayer.y - key.gridY);
             if (dist < KEY_DETECT_RADIUS) {
-                setCollectedKeys(prev => new Set(prev).add(index));
                 onKeyCollected?.(index);
             }
         });
@@ -109,6 +114,8 @@ export function Keys({
     return (
         <>
             {keys.map((key, idx) => {
+                if (key.gridX < 0) return null;
+
                 const [worldX, worldZ] = cellToWorld(gridWidth, gridHeight, key.gridX, key.gridY);
                 const color = KEY_COLORS[idx] ?? KEY_COLORS[0];
 
@@ -118,7 +125,7 @@ export function Keys({
                         worldX={worldX}
                         worldZ={worldZ}
                         color={color}
-                        isCollected={collectedKeys.has(idx)}
+                        isCollected={isCollected(idx)}
                     />
                 )
             })}
