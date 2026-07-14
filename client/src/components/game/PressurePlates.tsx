@@ -1,7 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber'; // runs code every frame inside the 3D canvas, like a game loop
 import * as THREE from 'three'; // the 3D library, needed for material stuff and DoubleSide
-import { useSounds } from '@/hooks/use-sounds';
 import { GltfModel } from './MazeModels';
 
 // only the base pad is swappable — the ring's color/opacity pulse is the actual "you're
@@ -35,22 +34,10 @@ function Plate({
     color: string;
     isActive: boolean;
 }) {
-    const { play: playSound } = useSounds();
     // refs let us poke the material directly every frame instead of going through React
     const discRef = useRef<THREE.MeshBasicMaterial | null>(null);
     const ringRef = useRef<THREE.MeshBasicMaterial | null>(null);
     const timeRef = useRef(0);
-    const prevActiveRef = useRef(isActive);
-
-    useEffect(() => {
-        // Algorithm: only play the plate sound on a state transition.
-        // If the plate was inactive and becomes active, play the activation sound once.
-        if (prevActiveRef.current === isActive) return;
-        if (isActive) {
-            playSound("plateClick");
-        }
-        prevActiveRef.current = isActive;
-    }, [isActive, playSound]);
 
     // breathing glow when active, dim when waiting
     useFrame((_, delta) => {

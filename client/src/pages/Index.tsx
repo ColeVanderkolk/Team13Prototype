@@ -7,7 +7,6 @@ import { saveReturnUrl, loadReturnUrl, type GameInitPayload } from "@/lib/sessio
 import * as Client from "colyseus.js";
 import { toast } from "sonner";
 import { GameScreen } from "@/screens/GameScreen";
-import { useSounds } from "@/hooks/use-sounds";
 import { ResultsOverlay } from "@/components/game/ResultsOverlay";
 
 // const connect = async () => {
@@ -251,12 +250,9 @@ const Index = () => {
   // UI-only state (not server-synced)
   const [showGo, setShowGo] = useState(false);
   const prevCountdownRef = useRef(0);
-  const prevExitUnlockedRef = useRef(initialGameState.exitUnlocked);
-  const prevStageRef = useRef(initialGameState.stage);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const resultsReasonRef = useRef<"gameover" | "abandoned">("gameover");
-  const { play: playSound } = useSounds();
 
 
   // Show results overlay when game ends (stay on /play so LiveKit voice persists)
@@ -280,23 +276,6 @@ const Index = () => {
       return () => clearTimeout(timer);
     }
   }, [gameState.countdown]);
-
-  useEffect(() => {
-    // Algorithm: the server unlocks the door once the objective is solved.
-    // The client listens for the transition from locked to unlocked and plays the unlock fanfare once.
-    if (!prevExitUnlockedRef.current && gameState.exitUnlocked) {
-      playSound("doorUnlocked");
-    }
-    prevExitUnlockedRef.current = gameState.exitUnlocked;
-  }, [gameState.exitUnlocked, playSound]);
-
-  useEffect(() => {
-    // Algorithm: when the stage counter increases, treat it as a new level start and play the portal sound once.
-    if (gameState.stage > prevStageRef.current) {
-      playSound("nextLevel");
-    }
-    prevStageRef.current = gameState.stage;
-  }, [gameState.stage, playSound]);
 
   const createStateUpdater = useCallback((gameRoom: Client.Room<ServerGameState>) => () => {
     if (!gameRoom.state) return;

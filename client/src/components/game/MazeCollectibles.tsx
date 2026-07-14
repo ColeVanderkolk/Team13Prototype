@@ -3,7 +3,6 @@ import { useFrame, useThree } from "@react-three/fiber";
 import type * as Client from "colyseus.js";
 // Reuse the teammate-built prototype class directly so its current spin/float/collect behavior stays intact.
 import { CollectibleSimple } from "../../../../server/collectibles/CollectibleSimple.ts";
-import { useSounds } from "@/hooks/use-sounds";
 
 const CELL_SIZE = 1.8;
 const PICKUP_RADIUS = 0.5;
@@ -41,7 +40,6 @@ function CollectibleSimpleObject({
   room: Client.Room | null;
 }) {
   const { scene } = useThree();
-  const { play: playSound } = useSounds();
   const instanceRef = useRef<CollectibleSimple | null>(null);
   const hasReportedRef = useRef(false);
   const [worldX, worldZ] = useMemo(
@@ -71,10 +69,7 @@ function CollectibleSimpleObject({
     const dx = localPositionRef.current.x - collectible.x;
     const dy = localPositionRef.current.y - collectible.y;
     if (!hasReportedRef.current && Math.hypot(dx, dy) < PICKUP_RADIUS) {
-      // Algorithm: if the player enters the collectible pickup radius, trigger the reward sound once
-      // and mark the collectible as collected so the event does not repeat on later frames.
       hasReportedRef.current = true;
-      playSound("collectible");
       instance.collect(scene as any);
       room?.send("collect", { id: collectible.id });
     }

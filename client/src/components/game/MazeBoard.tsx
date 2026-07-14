@@ -7,7 +7,6 @@ import { ExitBarrier, MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
 import { Keys } from "./Keys";
-import { useSounds } from "@/hooks/use-sounds";
 
 const WALL_NORTH = 1;
 const WALL_EAST = 2;
@@ -542,7 +541,6 @@ export function MazeBoard({
   const [startWorldX, startWorldZ] = cellToWorld(gridWidth, gridHeight, startX, startY);
   const [exitWorldX, exitWorldZ] = cellToWorld(gridWidth, gridHeight, exitX, exitY);
   const { gl, camera } = useThree();
-  const { play: playSound } = useSounds();
   const currentPlayer = currentSessionId ? players.get(currentSessionId) : undefined;
   const localPositionRef = useRef<LocalPosition>({
     x: currentPlayer?.x ?? startX,
@@ -758,10 +756,7 @@ export function MazeBoard({
       }
       if (event.code === "KeyE") {
         if (disabledRef.current) return;
-        // Algorithm: on a fresh interact press, play the switch sound only when a lever is nearby.
-        // The repeat guard prevents the sound from spamming while the key is held down.
         if (!event.repeat) {
-          if (leverInRangeRef?.current) playSound("lightSwitch");
           room?.send("pullLever");
         }
         return;
@@ -812,7 +807,7 @@ export function MazeBoard({
       canvas.removeEventListener("click", handleCanvasClick);
       if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
-  }, [gl, leverInRangeRef, playSound, room]);
+  }, [gl, room]);
 
   // Graffiti drawing: hold left-click to draw on a nearby wall, right-click to erase.
   // In first person (mouse captured) you paint with the crosshair like a spray can;
