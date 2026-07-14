@@ -48,13 +48,20 @@ export class GameRoom extends Room<GameState> {
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
     private readonly PLATE_RADIUS = 0.2;
+    // Registry of party codes currently in use, shared across rooms via presence
+    private static readonly PARTY_CODE_CHANNEL = "$fyw-party-codes";
+    // No 0/O or 1/I/L, so codes are unambiguous when shared out loud or handwritten
+    private static readonly PARTY_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     private readonly LEVER_RADIUS = 0.55;
     private strokeCounter = 0;
     private readonly STROKE_MAX_POINTS = 64;
     private readonly STROKE_MAX_PER_WALL = 24;
     private readonly STROKE_MAX_TOTAL = 600;
 
-    onCreate(options: any) {
+    async onCreate(options: any) {
+        // Replace Colyseus's default long, case-sensitive room id with a short
+        // shareable party code that matches the main menu's 5-character input
+        this.roomId = await this.generatePartyCode();
         console.log("GameRoom created with options:", options, "| Room ID:", this.roomId);
         
         this.setState(new GameState());
@@ -131,11 +138,25 @@ export class GameRoom extends Room<GameState> {
     }
 
     async onDispose() {
+        await this.presence.srem(GameRoom.PARTY_CODE_CHANNEL, this.roomId);
         console.log("room", this.roomId, "disposing...");
         if (this.gameTimer) {
             clearInterval(this.gameTimer);
             this.gameTimer = null;
         }
+    }
+
+    private async generatePartyCode(): Promise<string> {
+        const inUse = await this.presence.smembers(GameRoom.PARTY_CODE_CHANNEL);
+        let code = "";
+        do {
+            code = Array.from(
+                { length: 5 },
+                () => GameRoom.PARTY_CODE_CHARS[Math.floor(Math.random() * GameRoom.PARTY_CODE_CHARS.length)],
+            ).join("");
+        } while (inUse.includes(code));
+        await this.presence.sadd(GameRoom.PARTY_CODE_CHANNEL, code);
+        return code;
     }
 
     private startGameplay() {
