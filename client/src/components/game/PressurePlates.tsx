@@ -47,7 +47,7 @@ function Plate({
         // If the plate was inactive and becomes active, play the activation sound once.
         if (prevActiveRef.current === isActive) return;
         if (isActive) {
-            playSound("activate");
+            playSound("plateClick");
         }
         prevActiveRef.current = isActive;
     }, [isActive, playSound]);

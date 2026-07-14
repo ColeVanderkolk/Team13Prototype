@@ -268,29 +268,24 @@ const Index = () => {
     setShowResults(true);
   }, [gameState.isGameOver]);
 
-  // Show "GO" briefly when countdown transitions from >0 to 0,
-  // and play the movement SFX on each tick from 10 down through GO (0).
+  // Show "GO" briefly when countdown transitions from >0 to 0.
   useEffect(() => {
     const prev = prevCountdownRef.current;
     const current = gameState.countdown;
     prevCountdownRef.current = current;
-
-    if (current !== prev && current >= 0 && current <= 10) {
-      playSound("move");
-    }
 
     if (prev > 0 && current === 0) {
       setShowGo(true);
       const timer = setTimeout(() => setShowGo(false), 600);
       return () => clearTimeout(timer);
     }
-  }, [gameState.countdown, playSound]);
+  }, [gameState.countdown]);
 
   useEffect(() => {
     // Algorithm: the server unlocks the door once the objective is solved.
     // The client listens for the transition from locked to unlocked and plays the unlock fanfare once.
     if (!prevExitUnlockedRef.current && gameState.exitUnlocked) {
-      playSound("unlock");
+      playSound("doorUnlocked");
     }
     prevExitUnlockedRef.current = gameState.exitUnlocked;
   }, [gameState.exitUnlocked, playSound]);
@@ -298,7 +293,7 @@ const Index = () => {
   useEffect(() => {
     // Algorithm: when the stage counter increases, treat it as a new level start and play the portal sound once.
     if (gameState.stage > prevStageRef.current) {
-      playSound("portal");
+      playSound("nextLevel");
     }
     prevStageRef.current = gameState.stage;
   }, [gameState.stage, playSound]);

@@ -74,7 +74,7 @@ function CollectibleSimpleObject({
       // Algorithm: if the player enters the collectible pickup radius, trigger the reward sound once
       // and mark the collectible as collected so the event does not repeat on later frames.
       hasReportedRef.current = true;
-      playSound("gold");
+      playSound("collectible");
       instance.collect(scene as any);
       room?.send("collect", { id: collectible.id });
     }
