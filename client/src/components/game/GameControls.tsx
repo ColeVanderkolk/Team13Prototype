@@ -110,13 +110,37 @@ export function GameControls({ showPing = true }: { showPing?: boolean }) {
 
             <div className="flex flex-col gap-0.5">
               <p className="font-montreal text-[11px] font-semibold leading-snug" style={{ color: BLUE }}>
-                Ping a location.
-              </p>
-              <p className="font-montreal text-[10px] font-medium leading-snug" style={{ color: BLUE_DIM }}>
-                (Visible to your team)
+                Draw on Walls.
               </p>
             </div>
-          </div>
+          </div>      
+        )}
+
+        {showPing && (
+          <div className="flex items-center gap-2 border-t border-white/10 pt-2.5" style={{ transform: "translateX(-3px)" }}>
+            <svg width="32" height="36" viewBox="0 0 39 43" fill="none" style={{ color: BLUE, overflow: "visible" }} className="shrink-0">
+              {/* Left button fill — clipped to top-left of body */}
+              <defs>
+                <clipPath id="gc-mouse-right">
+                    <path d="M22.5004 1.5004C34.5004 1.5004 37.5005 10.5203 37.5005 21.5004H22.5004V1.5004Z" />
+                </clipPath>
+              </defs>
+              
+              <rect x="23" y="1" width="15" height="21" fill="currentColor" clipPath="url(#gc-mouse-right)" />
+              <path d="M22.5005 8.5004V1.5004M22.5005 21.5004V15.5004" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M22.5004 41.5004C34.5005 41.5004 37.5005 32.4804 37.5005 21.5004C37.5005 10.5204 34.5005 1.5004 22.5004 1.5004C10.5004 1.5004 7.50049 10.5203 7.50049 21.5004C7.50049 32.4805 10.5004 41.5004 22.5004 41.5004Z" stroke="currentColor" strokeWidth="3" />
+              <path d="M25.5005 11.5004C25.5005 10.5685 25.5005 10.1026 25.3482 9.73503C25.1453 9.24497 24.7559 8.85563 24.2659 8.65264C23.8983 8.5004 23.4324 8.5004 22.5005 8.5004C21.5686 8.5004 21.1027 8.5004 20.7351 8.65264C20.2451 8.85563 19.8557 9.24497 19.6527 9.73503C19.5005 10.1026 19.5005 10.5685 19.5005 11.5004V12.5004C19.5005 13.4323 19.5005 13.8982 19.6527 14.2658C19.8557 14.7558 20.2451 15.1452 20.7351 15.3482C21.1027 15.5004 21.5686 15.5004 22.5005 15.5004C23.4324 15.5004 23.8983 15.5004 24.2659 15.3482C24.7559 15.1452 25.1453 14.7558 25.3482 14.2658C25.5005 13.8982 25.5005 13.4323 25.5005 12.5004V11.5004Z" stroke="currentColor" strokeWidth="3" />
+              <path d="M7.50049 21.5004L37.5005 21.5004" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              {/* <path d="M5.50049 3.83531L4.73824 1.5004M3.55784 8.63531L1.50049 9.5004" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /> */}
+              <path d="M40.5005 3.83531L40.26 1.5004M41.44 8.63531L43.5 9.5004" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+
+            <div className="flex flex-col gap-0.5">
+              <p className="font-montreal text-[11px] font-semibold leading-snug" style={{ color: BLUE }}>
+                Erase Drawings.
+              </p>
+            </div>
+          </div>      
         )}
       </div>
     </div>
