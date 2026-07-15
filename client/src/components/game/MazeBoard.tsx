@@ -471,15 +471,6 @@ function PlayerToken({
   return (
     <group ref={groupRef} position={[target.x, target.y, target.z]}>
       <MazePlayerAvatar color={color} isMe={isMe} />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.035, 0]}>
-        <ringGeometry args={[0.54, 0.68, 40]} />
-        <meshBasicMaterial
-          color={color}
-          transparent
-          opacity={isMe ? 0.64 : 0.34}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
     </group>
   );
 }
