@@ -564,7 +564,7 @@ const Index = () => {
                     Waiting for players...
                 </p>
                 <p className="text-white text-2xl font-bold">
-                    {gameState.playerCount} / {gameState.requiredPlayers}
+                    {gameState.players.size} / {gameState.requiredPlayers}
                 </p>
                 <div className="text-slate-400 text-sm">
                     <p>Room code</p>

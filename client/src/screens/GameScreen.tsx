@@ -104,6 +104,7 @@ interface GameScreenProps {
     onGameAbandoned?: ()=> void;
     showResults?: boolean; // post-game results overlay is showing — freezes movement/interaction
 
+    
     pressurePlatesRequired: number;
     plate0X: number;
     plate0Y: number;
@@ -185,8 +186,6 @@ export const GameScreen = ({
     const prevStageRef = useRef(stage);
     const onGameAbandonedRef = useRef(onGameAbandoned);
     onGameAbandonedRef.current = onGameAbandoned;
-    // const WALK_SPEED = 6.0;
-    // const SPRINT_SPEED = 10.5; 
 
     const noiseFieldRef = useRef<NoiseFieldHandle>(null);
     const compassYawRef = useRef<number | null>(null);
@@ -384,15 +383,6 @@ export const GameScreen = ({
 
               <div className="relative z-10 flex min-h-10 w-full shrink-0 flex-nowrap items-center justify-between gap-x-2 border-t border-white/10 px-3 py-2">
                 <div className="flex min-w-0 flex-1 items-center gap-x-1.5">
-                  <kbd
-                    className="inline-flex shrink-0 items-center rounded-none border border-solid bg-canvas/50 px-1.5 py-0.5 font-montreal text-[9px] font-medium uppercase tracking-[0.1em] text-slate-400"
-                    style={{ borderColor: POLAR_HUD.border }}
-                  >
-                    Tab
-                  </kbd>
-                  <span className="min-w-0 truncate text-[11px] leading-snug text-slate-500">
-                    Switch player
-                  </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
                   <button
@@ -555,7 +545,21 @@ export const GameScreen = ({
         </div>
       </div>
 
-
+      {/* Return to Main Menu*/}
+      <div className="absolute bottom-4 left-4 z-10">
+        <button
+            type="button"
+            onClick={onGameAbandoned}
+            className="relative rounded-none border border-solid bg-canvas/50 px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-inset ring-white/[0.06] backdrop-blur-[4px] transition-colors hover:bg-canvas/80"
+            style={{ borderColor: POLAR_HUD.border }}
+        >
+            <HudCornerLs />
+            <span className="relative z-[1] font-montreal text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-slate-400 hover:text-white transition-colors">
+                ← Main Menu
+            </span>
+        </button>
+      </div>
+      
       {/* Main Game Canvas */}
       <CanvasErrorBoundary>
       <Canvas
@@ -626,10 +630,6 @@ export const GameScreen = ({
 
       </Canvas>
       </CanvasErrorBoundary>
-
-      <div className="absolute bottom-4 left-4 z-10 pointer-events-none">
-        <Compass compassYawRef={compassYawRef} />
-      </div>
 
       <div className="absolute bottom-1/2 left-1/2 z-10 -translate-x-1/2 translate-y-24 pointer-events-none">
         <LeverPrompt leverInRangeRef={leverInRangeRef} />

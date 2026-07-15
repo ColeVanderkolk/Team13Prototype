@@ -57,6 +57,11 @@ export class GameRoom extends Room<GameState> {
     private readonly STROKE_MAX_POINTS = 64;
     private readonly STROKE_MAX_PER_WALL = 24;
     private readonly STROKE_MAX_TOTAL = 600;
+    private abandonGameVotes: Map<string, {sessionId: string; timestamp: number}> = new Map();
+    private abandonGameVoteTimer: ReturnType<typeof setTimeout> | null = null;
+    private readonly ABANDON_GAME_VOTE_WINDOW = 10000;
+    private abandonTimeout: ReturnType<typeof setTimeout> | null = null;
+    private readonly ABANDON_TIMEOUT = 2 * 60 * 1000;
 
     async onCreate(options: any) {
         // Replace Colyseus's default long, case-sensitive room id with a short
@@ -95,6 +100,54 @@ export class GameRoom extends Room<GameState> {
             this.advanceLevel();
         });
 
+        // handle abandon game vote
+        this.onMessage("abandonGame", (client) => {
+            const player = this.state.players.get(client.sessionId);
+            if (!player || !this.state.gameStarted || this.state.isGameOver) return;
+
+            // In solo mode, immediately abandon
+            if (this.isSoloMode) {
+                this.executeAbandonGame();
+                return;
+            }
+
+            // Check if this player already voted
+            if (this.abandonGameVotes.has(client.sessionId)) return;
+
+            const isFirstVote = this.abandonGameVotes.size === 0;
+
+            // Record this player's vote
+            this.abandonGameVotes.set(client.sessionId, {
+                sessionId: client.sessionId,
+                timestamp: Date.now()
+            });
+
+            // Count active (non-spectator) players
+            // const activePlayers = this.state.players.keys();
+            const requiredVotes = this.state.players.size;
+
+            // If first vote, start the timer and notify all players
+            if (isFirstVote) {
+                this.startAbandonGameVoteTimer();
+
+                this.broadcast("abandonGameVoteStarted", {
+                // initiatorColor: player.color,
+                expiresAt: Date.now() + this.ABANDON_GAME_VOTE_WINDOW
+                });
+            }
+
+            // Broadcast updated vote count
+            this.broadcast("abandonGameVoteUpdate", {
+                voterColor: player.sessionId,
+                voteCount: this.abandonGameVotes.size,
+                requiredVotes
+            });
+
+            // Check if all active players have voted
+            if (this.abandonGameVotes.size >= requiredVotes) {
+                this.executeAbandonGame();
+            }
+            });
     }
 
     async onJoin(client: Client, options: any) {
@@ -144,6 +197,45 @@ export class GameRoom extends Room<GameState> {
             clearInterval(this.gameTimer);
             this.gameTimer = null;
         }
+    }
+
+    private startAbandonGameVoteTimer() {
+        if (this.abandonGameVoteTimer) {
+            clearTimeout(this.abandonGameVoteTimer);
+        }
+
+        this.abandonGameVoteTimer = setTimeout(() => {
+        this.abandonGameVotes.clear();
+        this.abandonGameVoteTimer = null;
+
+        this.broadcast("abandonGameVoteExpired", {});
+        console.log("Abandon game vote expired - not enough votes");
+        }, this.ABANDON_GAME_VOTE_WINDOW);
+    }
+
+    private async executeAbandonGame() {
+        // Clear the timer
+        if (this.abandonGameVoteTimer) {
+        clearTimeout(this.abandonGameVoteTimer);
+        this.abandonGameVoteTimer = null;
+        }
+
+        // Reset votes
+        this.abandonGameVotes.clear();
+
+        console.log("Game abandoned by unanimous vote!");
+
+        if (this.gameTimer) {
+        clearInterval(this.gameTimer);
+        this.gameTimer = null;
+        }
+
+        // Notify all players — clients will call room.leave() on receiving this
+        this.broadcast("gameAbandoned", {});
+
+        // End the game as abandoned
+        this.state.isGameOver = true;
+        this.disconnect();
     }
 
     private async generatePartyCode(): Promise<string> {
