@@ -3,6 +3,8 @@ import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
 const WALL_MODEL_URL = (import.meta.env.VITE_MAZE_WALL_MODEL_URL || "").trim();
+// Lets MazeBoard fall back to per-wall rendering when a custom Blender wall model is set
+export const HAS_WALL_MODEL = Boolean(WALL_MODEL_URL);
 const PLAYER_MODEL_URL = (import.meta.env.VITE_MAZE_PLAYER_MODEL_URL || "").trim();
 const EXIT_BARRIER_MODEL_URL = (import.meta.env.VITE_EXIT_BARRIER_MODEL_URL || "").trim();
 

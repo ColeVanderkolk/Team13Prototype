@@ -72,7 +72,9 @@ export class GameRoom extends Room<GameState> {
         this.setState(new GameState());
         this.isSoloMode = options?.soloMode === true;
         this.isDevMode = options?.devMode === true;
-        this.setPatchRate(1000 / 60);
+        // 20Hz matches the client's position send rate; remote players are already
+        // visually smoothed, and 3x fewer patches means far fewer client re-renders
+        this.setPatchRate(1000 / 20);
 
         this.onMessage("position", (client, message: PositionMessage) => {
             this.handlePosition(client, message);
@@ -513,6 +515,20 @@ export class GameRoom extends Room<GameState> {
         if (localX < -edge && (walls & wallForDirection("left")) !== 0) return false;
         if (localY > edge && (walls & wallForDirection("down")) !== 0) return false;
         if (localY < -edge && (walls & wallForDirection("up")) !== 0) return false;
+
+        // Corner test (mirrors the client): neighbor-cell walls meeting at this
+        // corner also block, so wall ends can't be clipped into or cut around
+        if (Math.abs(localX) > edge && Math.abs(localY) > edge) {
+            const sx = localX > 0 ? 1 : -1;
+            const sy = localY > 0 ? 1 : -1;
+            const bits = (cx: number, cy: number) =>
+                cx >= 0 && cy >= 0 && cx < this.state.gridWidth && cy < this.state.gridHeight
+                    ? this.state.mazeWalls[mazeIndex(this.state.gridWidth, cx, cy)]
+                    : 0xf;
+            const xNeighborWallY = bits(cellX + sx, cellY) & wallForDirection(sy > 0 ? "down" : "up");
+            const yNeighborWallX = bits(cellX, cellY + sy) & wallForDirection(sx > 0 ? "right" : "left");
+            if (xNeighborWallY !== 0 || yNeighborWallX !== 0) return false;
+        }
 
         // treat the exit cell as a solid wall until the obstacle is solved
         if (!this.state.exitUnlocked && Math.hypot(x - this.state.exitX, y - this.state.exitY) < 0.5) {

@@ -3,7 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import type * as Client from "colyseus.js";
 import * as THREE from "three";
 import { MazeCollectibles } from "./MazeCollectibles";
-import { ExitBarrier, MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
+import { ExitBarrier, HAS_WALL_MODEL, MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
 import { Keys } from "./Keys";
@@ -386,6 +386,111 @@ function FpCrosshair({ firstPersonRef }: { firstPersonRef: MutableRefObject<bool
   );
 }
 
+// Renders every wall and corner post of the maze as instanced meshes - two draw
+// calls per quadrant (walls + posts) instead of one draw call per wall. Walls no
+// longer cast shadows (players still do; the floor still receives them): with
+// hundreds of walls the shadow pass was doubling the GPU's work for shadows that
+// were barely visible under the emissive glow.
+function InstancedMaze({
+  wallSegments,
+  cornerPosts,
+  materials,
+}: {
+  wallSegments: WallSegment[];
+  cornerPosts: Array<{ key: string; position: [number, number, number] }>;
+  materials: THREE.Material[];
+}) {
+  const quadrantOf = (x: number, z: number) => (x >= 0 ? 1 : 0) + (z >= 0 ? 2 : 0);
+
+  const groups = useMemo(() => {
+    return materials.map((_, quadrant) => ({
+      walls: wallSegments.filter((w) => quadrantOf(w.position[0], w.position[2]) === quadrant),
+      posts: cornerPosts.filter((p) => quadrantOf(p.position[0], p.position[2]) === quadrant),
+    }));
+  }, [cornerPosts, materials, wallSegments]);
+
+  return (
+    <>
+      {groups.map((group, quadrant) => (
+        <group key={quadrant}>
+          {group.walls.length > 0 && (
+            <WallInstances walls={group.walls} material={materials[quadrant]} />
+          )}
+          {group.posts.length > 0 && (
+            <PostInstances posts={group.posts} material={materials[quadrant]} />
+          )}
+        </group>
+      ))}
+    </>
+  );
+}
+
+function WallInstances({ walls, material }: { walls: WallSegment[]; material: THREE.Material }) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const matrix = useMemo(() => new THREE.Matrix4(), []);
+
+  useEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    walls.forEach((wall, i) => {
+      matrix.makeScale(wall.size[0], wall.size[1], wall.size[2]);
+      matrix.setPosition(wall.position[0], wall.position[1], wall.position[2]);
+      mesh.setMatrixAt(i, matrix);
+    });
+    mesh.count = walls.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  }, [matrix, walls]);
+
+  return (
+    <instancedMesh
+      key={walls.length}
+      ref={meshRef}
+      args={[undefined, undefined, walls.length]}
+      material={material}
+      receiveShadow
+    >
+      <boxGeometry args={[1, 1, 1]} />
+    </instancedMesh>
+  );
+}
+
+function PostInstances({
+  posts,
+  material,
+}: {
+  posts: Array<{ key: string; position: [number, number, number] }>;
+  material: THREE.Material;
+}) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const matrix = useMemo(() => new THREE.Matrix4(), []);
+
+  useEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    posts.forEach((post, i) => {
+      matrix.makeScale(WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS);
+      matrix.setPosition(post.position[0], post.position[1], post.position[2]);
+      mesh.setMatrixAt(i, matrix);
+    });
+    mesh.count = posts.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  }, [matrix, posts]);
+
+  return (
+    <instancedMesh
+      key={posts.length}
+      ref={meshRef}
+      args={[undefined, undefined, posts.length]}
+      material={material}
+      receiveShadow
+    >
+      <boxGeometry args={[1, 1, 1]} />
+    </instancedMesh>
+  );
+}
+
 function PlayerToken({
   player,
   index,
@@ -586,7 +691,12 @@ export function MazeBoard({
           points,
         });
       });
-      next.sort((a, b) => a.id.localeCompare(b.id));
+      // Sort by the stroke counter NUMERICALLY (ids are "s1", "s2", ... "s10"), so
+      // strokes render in the order they were drawn. Alphabetical sorting put "s10"
+      // before "s2", letting old strokes repaint OVER later eraser strokes - erased
+      // graffiti would "pop back up".
+      const strokeNumber = (id: string) => Number(id.slice(1)) || 0;
+      next.sort((a, b) => strokeNumber(a.id) - strokeNumber(b.id));
 
       setGraffiti((prev) => {
         if (
@@ -620,7 +730,7 @@ export function MazeBoard({
           segments.push({
             key: `${x}-${y}-n`,
             position: [worldX, WALL_HEIGHT / 2, worldZ - CELL_SIZE / 2],
-            size: [CELL_SIZE + WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS],
+            size: [CELL_SIZE - WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS],
           });
         }
 
@@ -628,7 +738,7 @@ export function MazeBoard({
           segments.push({
             key: `${x}-${y}-w`,
             position: [worldX - CELL_SIZE / 2, WALL_HEIGHT / 2, worldZ],
-            size: [WALL_THICKNESS, WALL_HEIGHT, CELL_SIZE + WALL_THICKNESS],
+            size: [WALL_THICKNESS, WALL_HEIGHT, CELL_SIZE - WALL_THICKNESS],
           });
         }
 
@@ -636,7 +746,7 @@ export function MazeBoard({
           segments.push({
             key: `${x}-${y}-e`,
             position: [worldX + CELL_SIZE / 2, WALL_HEIGHT / 2, worldZ],
-            size: [WALL_THICKNESS, WALL_HEIGHT, CELL_SIZE + WALL_THICKNESS],
+            size: [WALL_THICKNESS, WALL_HEIGHT, CELL_SIZE - WALL_THICKNESS],
           });
         }
 
@@ -644,7 +754,7 @@ export function MazeBoard({
           segments.push({
             key: `${x}-${y}-s`,
             position: [worldX, WALL_HEIGHT / 2, worldZ + CELL_SIZE / 2],
-            size: [CELL_SIZE + WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS],
+            size: [CELL_SIZE - WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS],
           });
         }
       }
@@ -655,6 +765,23 @@ export function MazeBoard({
     // re-renders even when the parent passes a fresh mazeWalls array each patch
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridHeight, gridWidth, hasMaze, seed, mazeWalls.length]);
+
+  // One shared material per quadrant for every wall and post in it
+  const quadrantMaterials = useMemo(
+    () =>
+      QUADRANT_WALL_COLORS.map(
+        ([color, emissive]) =>
+          new THREE.MeshStandardMaterial({
+            color,
+            emissive,
+            emissiveIntensity: 0.16,
+            roughness: 0.42,
+            metalness: 0.22,
+          }),
+      ),
+    [],
+  );
+  useEffect(() => () => quadrantMaterials.forEach((m) => m.dispose()), [quadrantMaterials]);
 
   const orderedPlayers = useMemo(
     () => Array.from(players.entries()).sort(([a], [b]) => a.localeCompare(b)),
@@ -687,6 +814,38 @@ export function MazeBoard({
     [wallSegments],
   );
 
+  // Corner posts: a small pillar at every grid corner that has at least one wall
+  // meeting it. Walls now end exactly at post faces, so no two surfaces ever
+  // overlap in the same plane - this removes the corner z-fighting at the source.
+  const cornerPosts = useMemo(() => {
+    if (!hasMaze) return [] as Array<{ key: string; position: [number, number, number] }>;
+
+    const wallBits = (cx: number, cy: number) =>
+      cx >= 0 && cy >= 0 && cx < gridWidth && cy < gridHeight
+        ? mazeWalls[mazeIndex(gridWidth, cx, cy)] ?? ALL_WALLS
+        : 0;
+
+    const posts: Array<{ key: string; position: [number, number, number] }> = [];
+    for (let cy = 0; cy <= gridHeight; cy++) {
+      for (let cx = 0; cx <= gridWidth; cx++) {
+        // The four wall edges meeting at corner (cx, cy), each readable from a
+        // cell that touches it (falling back to the twin cell for border edges)
+        const northOfBelow = (wallBits(cx, cy) & WALL_NORTH) !== 0 || (wallBits(cx, cy - 1) & WALL_SOUTH) !== 0;
+        const northOfBelowLeft = (wallBits(cx - 1, cy) & WALL_NORTH) !== 0 || (wallBits(cx - 1, cy - 1) & WALL_SOUTH) !== 0;
+        const westOfRight = (wallBits(cx, cy) & WALL_WEST) !== 0 || (wallBits(cx - 1, cy) & WALL_EAST) !== 0;
+        const westOfRightAbove = (wallBits(cx, cy - 1) & WALL_WEST) !== 0 || (wallBits(cx - 1, cy - 1) & WALL_EAST) !== 0;
+
+        if (!(northOfBelow || northOfBelowLeft || westOfRight || westOfRightAbove)) continue;
+
+        const worldX = (cx - 0.5 - (gridWidth - 1) / 2) * CELL_SIZE;
+        const worldZ = (cy - 0.5 - (gridHeight - 1) / 2) * CELL_SIZE;
+        posts.push({ key: `post-${cx}-${cy}`, position: [worldX, WALL_HEIGHT / 2, worldZ] });
+      }
+    }
+    return posts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridHeight, gridWidth, hasMaze, seed, mazeWalls.length]);
+
   const followedPlayer = currentPlayer ?? orderedPlayers[0]?.[1];
   const [followWorldX, followWorldZ] = cellToWorld(
     gridWidth,
@@ -715,6 +874,22 @@ export function MazeBoard({
     if (localX < -edge && (walls & wallForDirection("left")) !== 0) return false;
     if (localY > edge && (walls & wallForDirection("down")) !== 0) return false;
     if (localY < -edge && (walls & wallForDirection("up")) !== 0) return false;
+
+    // Corner test: when in a cell's corner zone, walls of the NEIGHBORING cells
+    // that meet at that corner also block. Without this, wall ends (corner posts)
+    // had no collision - players could clip into them, which in first person put
+    // the camera inside the wall geometry.
+    if (Math.abs(localX) > edge && Math.abs(localY) > edge) {
+      const sx = localX > 0 ? 1 : -1;
+      const sy = localY > 0 ? 1 : -1;
+      const bits = (cx: number, cy: number) =>
+        cx >= 0 && cy >= 0 && cx < gridWidth && cy < gridHeight
+          ? mazeWalls[mazeIndex(gridWidth, cx, cy)] ?? ALL_WALLS
+          : ALL_WALLS;
+      const xNeighborWallY = bits(cellX + sx, cellY) & wallForDirection(sy > 0 ? "down" : "up");
+      const yNeighborWallX = bits(cellX, cellY + sy) & wallForDirection(sx > 0 ? "right" : "left");
+      if (xNeighborWallY !== 0 || yNeighborWallX !== 0) return false;
+    }
 
     if (!exitUnlocked && Math.hypot(x - exitX, y - exitY) < 0.5) return false;
 
@@ -1235,27 +1410,18 @@ export function MazeBoard({
           </>
         )}
 
-        {wallSegments.map((wall) => {
-          const quadrant = (wall.position[0] >= 0 ? 1 : 0) + (wall.position[2] >= 0 ? 2 : 0);
-          const [wallColor, wallEmissive] = QUADRANT_WALL_COLORS[quadrant];
-          // Collinear neighbor walls overlap slightly at corners; where two quadrant
-          // colors meet, their coplanar faces z-fight. A tiny per-quadrant thickness
-          // difference (up to ~12mm in game units) separates the faces invisibly.
-          const alongX = wall.size[0] > wall.size[2];
-          const thickness = (alongX ? wall.size[2] : wall.size[0]) + quadrant * 0.004;
-          const adjustedSize: [number, number, number] = alongX
-            ? [wall.size[0], wall.size[1], thickness]
-            : [thickness, wall.size[1], wall.size[2]];
-          return (
-            <MazeWallPiece
-              key={wall.key}
-              position={wall.position}
-              size={adjustedSize}
-              color={wallColor}
-              emissive={wallEmissive}
-            />
-          );
-        })}
+        {HAS_WALL_MODEL ? (
+          // Custom Blender wall model configured - render per wall so the model shows
+          wallSegments.map((wall) => (
+            <MazeWallPiece key={wall.key} position={wall.position} size={wall.size} />
+          ))
+        ) : (
+          <InstancedMaze
+            wallSegments={wallSegments}
+            cornerPosts={cornerPosts}
+            materials={quadrantMaterials}
+          />
+        )}
 
         {/* Shared freeform graffiti, one drawing surface per wall that has strokes */}
         {Array.from(strokesByWall.entries()).map(([wallKey, wallStrokes]) => {

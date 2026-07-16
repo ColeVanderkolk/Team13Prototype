@@ -568,8 +568,9 @@ export const GameScreen = ({
         style={{ background: "#000000" }}
         shadows
         camera={{ position: [0, 12, 12], fov: 46, near: 0.1, far: 120 }}
+        dpr={[1, 1.5]} // cap resolution on high-DPI screens - big GPU savings, barely visible
         gl={{
-          powerPreference: "default",
+          powerPreference: "high-performance",
           failIfMajorPerformanceCaveat: false,
         }}
         onCreated={({ gl }) => {
