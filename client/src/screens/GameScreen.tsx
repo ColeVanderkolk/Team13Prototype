@@ -225,7 +225,6 @@ export const GameScreen = ({
     
   return (
     <div className="isolate w-full h-screen relative overflow-hidden bg-canvas">
-      {/* Cloud nebula backdrop is rendered inside the R3F Canvas (NebulaBackdrop). */}
       <div
         className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-t from-canvas/25 via-transparent to-transparent"
         aria-hidden
@@ -234,9 +233,7 @@ export const GameScreen = ({
         className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(ellipse_100%_70%_at_50%_45%,transparent_35%,hsl(222_45%_6%/0.35)_100%)]"
         aria-hidden
       />
-      {/* NOTE: PolarAmbientParticlesCanvas & NoiseBlobFieldCanvas removed —
-           hidden behind opaque R3F Canvas (z-[1]), wasted WebGL contexts.
-           NoiseFieldOverlay + ScoreBurstOverlay moved AFTER the R3F Canvas below. */}
+      {/* NoiseFieldOverlay stays outside the R3F canvas so it can render as a full-screen HUD effect. */}
       <style>{`
         @keyframes hudVotePulse {
           0%,

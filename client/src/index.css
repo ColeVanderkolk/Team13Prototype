@@ -142,47 +142,6 @@ All colors MUST be HSL.
   }
 }
 
-/* AtlasShapeLoader — dot pulse + glow (transform keeps translate(-50%,-50%) for absolute dots) */
-@keyframes atlas-shape-dot-glow {
-  0%,
-  100% {
-    opacity: 0.5;
-    transform: translate(-50%, -50%) scale(0.88);
-    filter: brightness(0.95);
-    box-shadow:
-      0 0 5px rgba(56, 189, 248, 0.5),
-      0 0 12px rgba(14, 165, 233, 0.25);
-  }
-  50% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1.14);
-    filter: brightness(1.12);
-    box-shadow:
-      0 0 10px rgba(34, 211, 238, 0.95),
-      0 0 22px rgba(56, 189, 248, 0.55),
-      0 0 36px rgba(14, 165, 233, 0.3);
-  }
-}
-
-@keyframes atlas-shape-dot-glow-active {
-  0%,
-  100% {
-    opacity: 0.92;
-    transform: translate(-50%, -50%) scale(1);
-    box-shadow:
-      0 0 8px rgba(34, 211, 238, 0.9),
-      0 0 20px rgba(56, 189, 248, 0.65);
-  }
-  50% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1.18);
-    box-shadow:
-      0 0 14px rgba(125, 211, 252, 1),
-      0 0 28px rgba(34, 211, 238, 0.75),
-      0 0 42px rgba(14, 165, 233, 0.45);
-  }
-}
-
 /* Sonner — match in-game polar HUD (glass + hairline; vars also on Toaster inline style) */
 [data-sonner-toaster] {
   font-family: "PP Supply Mono", ui-monospace, monospace, system-ui, sans-serif !important;
