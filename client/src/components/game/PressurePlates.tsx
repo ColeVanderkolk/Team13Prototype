@@ -78,7 +78,7 @@ function Plate({
     );
 }
 
-type PlayerPos = { x: number; y: number };
+type PlayerPos = { x: number; y: number; slot: number };
 
 type PlatePos = { gridX: number; gridY: number };
 
@@ -105,10 +105,10 @@ export function PressurePlates({
 }: PressurePlatesProps) {
     if (pressurePlatesRequired === 0 || plates.length === 0) return null;
 
-    // same sort order as the server — player 0 = teal plate, player 1 = red, player 2 = yellow
-    const orderedPlayers = Array.from(players.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([_, p]) => p);
+    // each player's plate is their own permanent slot — player 0 = teal plate, etc. —
+    // never re-derived from a live sort, so one player leaving can't reassign another's plate
+    const playersBySlot = new Map<number, PlayerPos>();
+    players.forEach((p) => playersBySlot.set(p.slot, p));
 
     return (
         <>
@@ -116,8 +116,8 @@ export function PressurePlates({
                 const [worldX, worldZ] = cellToWorld(gridWidth, gridHeight, plate.gridX, plate.gridY);
                 const color = PLATE_COLORS[idx] ?? PLATE_COLORS[0];
 
-                // only the player at this index can light up this plate
-                const assignedPlayer = orderedPlayers[idx];
+                // only the player assigned to this slot can light up this plate
+                const assignedPlayer = playersBySlot.get(idx);
                 const isOnPlate = assignedPlayer
                     ? Math.hypot(assignedPlayer.x - plate.gridX, assignedPlayer.y - plate.gridY) < PLATE_DETECT_RADIUS
                     : false;

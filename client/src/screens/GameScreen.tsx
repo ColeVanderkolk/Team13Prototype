@@ -73,6 +73,7 @@ interface PlayerState {
     y: number;
     sessionId: string;
     name: string;
+    slot: number; // permanent color/plate/key slot, assigned once at join
 }
 
 interface Collectible {

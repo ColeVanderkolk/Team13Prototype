@@ -59,7 +59,7 @@ function Key({
     );
 };
 
-type PlayerPos = { x: number; y: number};
+type PlayerPos = { x: number; y: number; slot: number };
 type KeyPos = { gridX: number; gridY: number};
 
 export function Keys({
@@ -83,10 +83,6 @@ export function Keys({
 }) {
     if (keysRequired === 0) return null;
 
-    const orderedPlayers = Array.from(players.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([sessionId, p]) => ({pos: p, sessionId}));
-
     // authoritative — the server's shared bitmask, so a key collected by one player
     // disappears for everyone, not just the client that picked it up
     const isCollected = (index: number) => (keysCollectedMask & (1 << index)) !== 0;
@@ -100,9 +96,9 @@ export function Keys({
             if (key.gridX < 0) return;
             if (isCollected(index)) return;
 
-            // only the assigned player can collect their key
-            const assignedPlayer = orderedPlayers[index];
-            if (assignedPlayer?.sessionId !== localSessionId) return;
+            // only the player whose permanent slot matches this key's index can collect it —
+            // never re-derived from a live sort, so one player leaving can't reassign ownership
+            if (localPlayer.slot !== index) return;
 
             const dist = Math.hypot(localPlayer.x - key.gridX, localPlayer.y - key.gridY);
             if (dist < KEY_DETECT_RADIUS) {
