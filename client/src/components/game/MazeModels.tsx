@@ -6,6 +6,10 @@ const WALL_MODEL_URL = (import.meta.env.VITE_MAZE_WALL_MODEL_URL || "").trim();
 const PLAYER_MODEL_URL = (import.meta.env.VITE_MAZE_PLAYER_MODEL_URL || "").trim();
 const EXIT_BARRIER_MODEL_URL = (import.meta.env.VITE_EXIT_BARRIER_MODEL_URL || "").trim();
 
+// visual size only — the server's collision radius (PLAYER_RADIUS) is unaffected, so this
+// can't clip anyone through a wall, it just shrinks how big the character looks
+const PLAYER_AVATAR_SCALE = 0.7;
+
 type Vec3 = [number, number, number];
 
 export function GltfModel({
@@ -75,7 +79,7 @@ export function MazePlayerAvatar({
   }
 
   return (
-    <group>
+    <group scale={[PLAYER_AVATAR_SCALE, PLAYER_AVATAR_SCALE, PLAYER_AVATAR_SCALE]}>
       <mesh position={[0, 0.58, 0]} castShadow>
         <capsuleGeometry args={[0.31, 0.58, 8, 18]} />
         <meshStandardMaterial

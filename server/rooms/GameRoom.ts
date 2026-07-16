@@ -446,10 +446,26 @@ export class GameRoom extends Room<GameState> {
     }
 
     private resetPlayersToStart() {
-        this.state.players.forEach((player) => {
-            player.x = this.state.startX;
-            player.y = this.state.startY;
+        // small fixed offsets so players spawn spread around the start cell instead of stacked
+        // on top of each other — kept well under the 0.27 wall-safety margin used in canOccupy,
+        // so this is safe regardless of which walls the maze generator put around the start cell
+        const SPAWN_OFFSETS: Array<{ x: number; y: number }> = [
+            { x: -0.2, y: -0.12 },
+            { x: 0.2, y: -0.12 },
+            { x: 0, y: 0.2 },
+        ];
+
+        // same sorted-by-sessionId order used everywhere else (plates, keys, levers), so a
+        // player's spawn spot stays consistent with their assigned color every level
+        const ordered = Array.from(this.state.players.values())
+            .sort((a, b) => a.sessionId.localeCompare(b.sessionId));
+
+        ordered.forEach((player, index) => {
+            const offset = this.isSoloMode ? { x: 0, y: 0 } : (SPAWN_OFFSETS[index] ?? { x: 0, y: 0 });
+            player.x = this.state.startX + offset.x;
+            player.y = this.state.startY + offset.y;
         });
+
         const now = Date.now();
         this.state.players.forEach((_player, sessionId) => {
             this.lastAcceptedAt.set(sessionId, now);
