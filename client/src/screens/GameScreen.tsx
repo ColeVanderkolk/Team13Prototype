@@ -202,6 +202,7 @@ export const GameScreen = ({
     // Dev: client-side stage override for effects testing (does NOT affect game)
     const [fakeStage, setFakeStage] = useState<number | null>(null);
     const effectiveStage = fakeStage ?? stage;
+    const isLowTime = timeRemaining <= 300;
 
     const openSettings = () => {
         if (settingsCloseTimerRef.current != null) {
@@ -530,15 +531,17 @@ export const GameScreen = ({
       {/* Timer Display - Bottom Center (polar blue chrome) */}
       <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
         <div
-          className="relative min-w-[7.25rem] whitespace-nowrap rounded-none border border-solid bg-canvas/50 px-4 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-inset ring-white/[0.06] backdrop-blur-[4px]"
-          style={{ borderColor: POLAR_HUD.border }}
+          className={`relative min-w-[7.25rem] whitespace-nowrap rounded-none border border-solid bg-canvas/50 px-4 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-inset backdrop-blur-[4px] transition-colors ${
+            isLowTime ? "ring-red-500/30 animate-pulse" : "ring-white/[0.06]"
+          }`}
+          style={{ borderColor: isLowTime ? "#ef4444" : POLAR_HUD.border }}
           data-ui="game-timer-chip"
         >
           <HudCornerLs />
           <div className="relative z-[1]">
-            <p className="font-montreal text-[9px] uppercase leading-tight tracking-[0.12em] text-slate-300">Time</p>
-            <p className="font-montreal text-[9px] uppercase leading-tight tracking-[0.12em] text-slate-300">Remaining</p>
-            <p className="mt-1 font-montreal text-3xl font-bold leading-none tracking-[-0.04em] text-white">
+            <p className={`font-montreal text-[9px] uppercase leading-tight tracking-[0.12em] ${isLowTime ? "text-red-300" : "text-slate-300"}`}>Time</p>
+            <p className={`font-montreal text-[9px] uppercase leading-tight tracking-[0.12em] ${isLowTime ? "text-red-300" : "text-slate-300"}`}>Remaining</p>
+            <p className={`mt-1 font-montreal text-3xl font-bold leading-none tracking-[-0.04em] transition-colors ${isLowTime ? "text-red-500" : "text-white"}`}>
               {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, "0")}
             </p>
           </div>
