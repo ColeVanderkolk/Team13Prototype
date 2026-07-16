@@ -32,7 +32,8 @@ interface PlayerState {
     x: number;
     y: number;
     sessionId: string;
-    name: string; 
+    name: string;
+    slot: number; // permanent color/plate/key slot, assigned once at join
 }
 
 interface Collectible {
@@ -282,7 +283,7 @@ const Index = () => {
 
     const newPlayers = new Map<string, PlayerState>();
     gameRoom.state.players?.forEach((p, id) => {
-      newPlayers.set(id, { x: p.x, y: p.y, sessionId: p.sessionId, name: p.name || ""});
+      newPlayers.set(id, { x: p.x, y: p.y, sessionId: p.sessionId, name: p.name || "", slot: p.slot ?? -1 });
     });
 
     const newCollectibles: Collectible[] = [];

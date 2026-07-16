@@ -156,6 +156,7 @@ export class GameRoom extends Room<GameState> {
         player.name = options?.playerName || `Player ${this.state.players.size + 1}`;
         player.x = this.state.startX;
         player.y = this.state.startY;
+        player.slot = this.assignSlot();
         this.state.players.set(client.sessionId, player);
         this.lastAcceptedAt.set(client.sessionId, Date.now());
 
@@ -177,7 +178,18 @@ export class GameRoom extends Room<GameState> {
         }
     }
 
-    onLeave(client: Client, consented: boolean) { 
+    // lowest slot number not currently held by anyone — assigned once per player at join,
+    // never recalculated later, so one player leaving can't reassign anyone else's color
+    private assignSlot(): number {
+        const usedSlots = new Set<number>();
+        this.state.players.forEach((p) => usedSlots.add(p.slot));
+
+        let slot = 0;
+        while (usedSlots.has(slot)) slot++;
+        return slot;
+    }
+
+    onLeave(client: Client, consented: boolean) {
         console.log(client.sessionId, "left!", consented ? "(consented)" : "(disconnected)") 
         this.state.players.delete(client.sessionId);
         this.lastAcceptedAt.delete(client.sessionId);
@@ -455,13 +467,10 @@ export class GameRoom extends Room<GameState> {
             { x: 0, y: 0.2 },
         ];
 
-        // same sorted-by-sessionId order used everywhere else (plates, keys, levers), so a
-        // player's spawn spot stays consistent with their assigned color every level
-        const ordered = Array.from(this.state.players.values())
-            .sort((a, b) => a.sessionId.localeCompare(b.sessionId));
-
-        ordered.forEach((player, index) => {
-            const offset = this.isSoloMode ? { x: 0, y: 0 } : (SPAWN_OFFSETS[index] ?? { x: 0, y: 0 });
+        // each player's spawn spot is their own permanent slot, so it stays consistent with
+        // their assigned color every level regardless of who else joins or leaves
+        this.state.players.forEach((player) => {
+            const offset = this.isSoloMode ? { x: 0, y: 0 } : (SPAWN_OFFSETS[player.slot] ?? { x: 0, y: 0 });
             player.x = this.state.startX + offset.x;
             player.y = this.state.startY + offset.y;
         });
@@ -807,22 +816,24 @@ export class GameRoom extends Room<GameState> {
 
         let activated = 0;
 
-        // sort players the same way the client does — player 0 = teal plate, etc.
-        const ordered = Array.from(this.state.players.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([_, p]) => p);
+        // each player's plate is their own permanent slot — player 0 = teal plate, etc.
+        // never re-derived from a live sort, so one player leaving can't reassign another's plate
+        const playersBySlot = new Map<number, Player>();
+        this.state.players.forEach((p) => playersBySlot.set(p.slot, p));
 
-        
-        for (let i = 0; i < platePositions.length && i < ordered.length; i++) {
+        for (let i = 0; i < platePositions.length; i++) {
+            const player = playersBySlot.get(i);
+            if (!player) continue;
+
             const { x: plateX, y: plateY } = platePositions[i];
-            const playerOnPlate = Math.hypot(ordered[i].x - plateX, ordered[i].y - plateY) < this.PLATE_RADIUS;
-            
+            const playerOnPlate = Math.hypot(player.x - plateX, player.y - plateY) < this.PLATE_RADIUS;
+
             // for keys - player must have collected their key first
-            const hasKey = this.state.obstacleType === "keys" 
+            const hasKey = this.state.obstacleType === "keys"
                 ? (this.state.keysCollectedMask & (1 << i)) !== 0
                 : true;
 
-            if (playerOnPlate && hasKey) activated++;            
+            if (playerOnPlate && hasKey) activated++;
         }
 
         this.state.pressurePlatesActivated = activated;

@@ -5,6 +5,9 @@ export class Player extends Schema {
     @type("number") y: number = 0;
     @type("string") sessionId: string = "";
     @type("string") name: string = "";
+    // permanent color/plate/key slot, assigned once at join — never recalculated from a live
+    // sorted list, so one player leaving can't reassign another player's color
+    @type("number") slot: number = -1;
 }
 
 export class Collectible extends Schema {

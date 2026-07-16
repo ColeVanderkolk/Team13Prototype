@@ -26,14 +26,16 @@ function buildShapeGeometry(position: number, radius: number) {
   if (position <= 1) return new THREE.CircleGeometry(radius, 28);
 
   if (position === 2) {
-    // lens/2-sided: two curved edges meeting at sharp points top and bottom —
-    // a plain squashed circle read as "just a smaller circle", so this needs real cusps.
+    // lens/2-sided: two curved edges meeting at sharp points — rotated 90° from a plain
+    // vertical lens so it reads as an eye shape (pointed corners left/right, not top/bottom)
     const shape = new THREE.Shape();
     const halfWidth = radius * 0.8;
     shape.moveTo(0, radius);
     shape.quadraticCurveTo(halfWidth, 0, 0, -radius);
     shape.quadraticCurveTo(-halfWidth, 0, 0, radius);
-    return new THREE.ShapeGeometry(shape);
+    const geometry = new THREE.ShapeGeometry(shape);
+    geometry.rotateZ(Math.PI / 2);
+    return geometry;
   }
 
   if (position === 4) {

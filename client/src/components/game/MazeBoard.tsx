@@ -82,6 +82,7 @@ interface MazePlayer {
   y: number;
   sessionId: string;
   name: string;
+  slot: number; // permanent color/plate/key slot, assigned once at join
 }
 
 interface MazeCollectible {
@@ -660,11 +661,13 @@ export function MazeBoard({
     [players],
   );
   const colorForSession = useMemo(() => {
+    // each player's color is their own permanent slot, not their position in a live sorted
+    // list — so one player leaving can never reassign another player's color
     const colorBySession = new Map(
-      orderedPlayers.map(([sessionId], index) => [sessionId, PLAYER_COLORS[index % PLAYER_COLORS.length]]),
+      Array.from(players.values()).map((p) => [p.sessionId, PLAYER_COLORS[p.slot % PLAYER_COLORS.length]]),
     );
     return (sessionId: string) => colorBySession.get(sessionId) ?? GRAFFITI_FALLBACK_COLOR;
-  }, [orderedPlayers]);
+  }, [players]);
 
   const strokesByWall = useMemo(() => {
     const byWall = new Map<string, GraffitiStrokeData[]>();
@@ -1276,11 +1279,11 @@ export function MazeBoard({
           room={room}
         />
 
-        {orderedPlayers.map(([sessionId, player], index) => (
+        {orderedPlayers.map(([sessionId, player]) => (
           <PlayerToken
             key={sessionId}
             player={player}
-            index={index}
+            index={player.slot}
             isMe={sessionId === currentSessionId}
             gridWidth={gridWidth}
             gridHeight={gridHeight}
