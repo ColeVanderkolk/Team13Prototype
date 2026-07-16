@@ -41,6 +41,12 @@ export class GameRoom extends Room<GameState> {
     private readonly PLAYER_RADIUS = 0.23;
     private readonly POSITION_GRACE = 0.9;
     private readonly COLLECTIBLE_SCORE = 10;
+    // Streak scoring: base points for clearing a level (x stage, x streak multiplier),
+    // the fraction of collectibles needed to keep the streak alive, and the streak cap
+    // so late levels can't completely dwarf early ones.
+    private readonly LEVEL_CLEAR_SCORE = 100;
+    private readonly STREAK_COLLECT_FRACTION = 0.5;
+    private readonly STREAK_CAP = 5;
     private readonly COLLECTIBLE_PICKUP_RADIUS = 0.7;
     private isSoloMode: boolean = false; 
     private isDevMode: boolean = false;
@@ -384,6 +390,8 @@ export class GameRoom extends Room<GameState> {
         }
 
         this.state.collectibles = collectibles;
+        this.state.collectiblesSpawnedThisLevel = collectibles.length;
+        this.state.collectiblesCollectedThisLevel = 0;
     }
 
     private calculateScores() {
@@ -404,7 +412,8 @@ export class GameRoom extends Room<GameState> {
         const distance = Math.hypot(player.x - collectible.x, player.y - collectible.y);
         if (distance > this.COLLECTIBLE_PICKUP_RADIUS) return;
 
-        this.state.totalScore += collectible.score || this.COLLECTIBLE_SCORE;
+        this.state.collectiblesCollectedThisLevel += 1;
+        this.state.totalScore += (collectible.score || this.COLLECTIBLE_SCORE) * this.state.scoreMultiplier;
         this.state.collectibles.splice(index, 1);
     }
 
@@ -912,6 +921,22 @@ export class GameRoom extends Room<GameState> {
 
     private advanceLevel() {
         console.log("Advancing to stage", this.state.stage + 1);
+
+        // Clearing a level is worth points (x stage, x current streak multiplier) -
+        // previously levels paid nothing, so score only measured collectible farming
+        this.state.totalScore += this.LEVEL_CLEAR_SCORE * this.state.stage * this.state.scoreMultiplier;
+
+        // Streak check: at least half this level's collectibles keeps the streak
+        // climbing (capped); anything less resets it to x1. Obstacles aren't part of
+        // the check because they already gate the exit - you can't skip them.
+        const spawned = this.state.collectiblesSpawnedThisLevel;
+        const keptStreak =
+            spawned === 0 ||
+            this.state.collectiblesCollectedThisLevel / spawned >= this.STREAK_COLLECT_FRACTION;
+        this.state.scoreMultiplier = keptStreak
+            ? Math.min(this.STREAK_CAP, this.state.scoreMultiplier + 1)
+            : 1;
+
         const nextStage = this.state.stage + 1;
         this.buildMazeForStage(nextStage);
         this.generateInitialCollectibles();

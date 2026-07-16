@@ -103,6 +103,12 @@ export class GameState extends Schema {
 
     @type("number") seed: number = 0;
 
+    // Streak scoring: all points multiply by this. It climbs by 1 each level the team
+    // collects at least half the collectibles, and resets to 1 when they don't.
+    @type("number") scoreMultiplier: number = 1;
+    @type("number") collectiblesSpawnedThisLevel: number = 0;
+    @type("number") collectiblesCollectedThisLevel: number = 0;
+
     // Shared freeform wall graffiti, keyed by stroke id
     @type({ map: GraffitiStroke }) graffiti = new MapSchema<GraffitiStroke>();
 }
