@@ -71,6 +71,7 @@ export function Keys({
     keysRequired,
     keysCollectedMask,
     onKeyCollected,
+    onCollection,
 } : {
     keys: KeyPos[]
     gridWidth: number;
@@ -80,6 +81,7 @@ export function Keys({
     keysRequired: number;
     keysCollectedMask: number;
     onKeyCollected?: (index: number) => void
+    onCollection: () => void;
 }) {
     if (keysRequired === 0) return null;
 
@@ -103,6 +105,7 @@ export function Keys({
             const dist = Math.hypot(localPlayer.x - key.gridX, localPlayer.y - key.gridY);
             if (dist < KEY_DETECT_RADIUS) {
                 onKeyCollected?.(index);
+                onCollection();
             }
         });
     });

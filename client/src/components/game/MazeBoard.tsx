@@ -7,6 +7,7 @@ import { ExitBarrier, HAS_WALL_MODEL, MazePlayerAvatar, MazeWallPiece } from "./
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
 import { Keys } from "./Keys";
+import { useSounds } from "@/hooks/use-sounds";
 
 const WALL_NORTH = 1;
 const WALL_EAST = 2;
@@ -135,6 +136,8 @@ interface MazeBoardProps {
   leverCellX: number[];
   leverCellY: number[];
   leverWallDir: number[];
+  onLeverPulled?: () => void;
+
   compassYawRef: MutableRefObject<number | null>;
   leverInRangeRef?: MutableRefObject<boolean>;
   disabled?: boolean; // freezes movement and all interaction — used for the post-game results screen
@@ -622,6 +625,8 @@ export function MazeBoard({
   leverCellX,
   leverCellY,
   leverWallDir,
+  onLeverPulled,
+
   compassYawRef,
   leverInRangeRef,
   disabled = false,
@@ -659,6 +664,10 @@ export function MazeBoard({
   const [pendingStrokes, setPendingStrokes] = useState<Array<GraffitiStrokeData & { wallKey: string }>>([]);
   const drawingRef = useRef<{ wallKey: string; side: number; eraser: boolean; points: number[] } | null>(null);
   const pendingCounterRef = useRef(0);
+
+  const { play: playSound, sfxVolume, setSfxVolume } = useSounds();
+  const onLeverPulledRef = useRef(onLeverPulled);
+  onLeverPulledRef.current = onLeverPulled;
 
   // Mirror the server's graffiti strokes into local state whenever the room state changes
   useEffect(() => {
@@ -927,6 +936,7 @@ export function MazeBoard({
         if (disabledRef.current) return;
         if (!event.repeat) {
           room?.send("pullLever");
+          onLeverPulledRef.current?.();
         }
         return;
       }
@@ -1443,6 +1453,7 @@ export function MazeBoard({
           gridHeight={gridHeight}
           localPositionRef={localPositionRef}
           room={room}
+          onCollection={() => playSound("collect")}
         />
 
         {orderedPlayers.map(([sessionId, player]) => (
@@ -1471,6 +1482,7 @@ export function MazeBoard({
             pressurePlatesRequired={pressurePlatesRequired}
             obstacleType={obstacleType}
             keysCollectedMask={keysCollectedMask}
+            onPlateActivated = {() => playSound("plate")}
           />
         )}
 
@@ -1483,6 +1495,7 @@ export function MazeBoard({
             gridHeight={gridHeight}
             leversPulledInOrder={leversPulledInOrder}
             wrongPullKey={leverWrongPullKey}
+            onLeverPulled = {() => playSound("lightSwitch")}
           />
         )}
 
@@ -1500,6 +1513,7 @@ export function MazeBoard({
             keysRequired={keysRequired}
             keysCollectedMask={keysCollectedMask}
             onKeyCollected={(index) => room?.send("collectKey", {index})}
+            onCollection={()=>playSound("collect")}
           />
         )}
       </group>

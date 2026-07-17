@@ -32,12 +32,14 @@ function CollectibleSimpleObject({
   gridHeight,
   localPositionRef,
   room,
+  onCollection,
 }: {
   collectible: MazeCollectible;
   gridWidth: number;
   gridHeight: number;
   localPositionRef: MutableRefObject<LocalPosition>;
   room: Client.Room | null;
+  onCollection: () => void;
 }) {
   const { scene } = useThree();
   const instanceRef = useRef<CollectibleSimple | null>(null);
@@ -72,6 +74,7 @@ function CollectibleSimpleObject({
       hasReportedRef.current = true;
       instance.collect(scene as any);
       room?.send("collect", { id: collectible.id });
+      onCollection();
     }
   });
 
@@ -84,12 +87,14 @@ export function MazeCollectibles({
   gridHeight,
   localPositionRef,
   room,
+  onCollection,
 }: {
   collectibles: MazeCollectible[];
   gridWidth: number;
   gridHeight: number;
   localPositionRef: MutableRefObject<LocalPosition>;
   room: Client.Room | null;
+  onCollection: () => void;
 }) {
   return (
     <>
@@ -101,6 +106,7 @@ export function MazeCollectibles({
           gridHeight={gridHeight}
           localPositionRef={localPositionRef}
           room={room}
+          onCollection={onCollection}
         />
       ))}
     </>

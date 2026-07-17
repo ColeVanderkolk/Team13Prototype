@@ -28,20 +28,30 @@ function Plate({
     worldZ,
     color,
     isActive, // true when the assigned player is standing on this plate
+    onActivated,
 }: {
     worldX: number;
     worldZ: number;
     color: string;
     isActive: boolean;
+    onActivated: () => void;
 }) {
     // refs let us poke the material directly every frame instead of going through React
     const discRef = useRef<THREE.MeshBasicMaterial | null>(null);
     const ringRef = useRef<THREE.MeshBasicMaterial | null>(null);
     const timeRef = useRef(0);
+    const prevIsActive = useRef(false);
 
     // breathing glow when active, dim when waiting
     useFrame((_, delta) => {
         timeRef.current += delta;
+
+        if (isActive && !prevIsActive.current) {
+            onActivated?.();
+        }
+
+        prevIsActive.current = isActive; 
+
         if (discRef.current) {
             discRef.current.opacity = isActive
                 ? 0.7 + Math.sin(timeRef.current * 3) * 0.15
@@ -53,6 +63,7 @@ function Plate({
                 : 0.5;
         }
     });
+
 
     return (
         <group>
@@ -90,6 +101,7 @@ type PressurePlatesProps = {
     pressurePlatesRequired: number;
     obstacleType: string;
     keysCollectedMask: number;
+    onPlateActivated: () => void;
 };
 
 // renders pressure plates at their actual maze positions
@@ -101,7 +113,8 @@ export function PressurePlates({
     players,
     pressurePlatesRequired,
     obstacleType,
-    keysCollectedMask
+    keysCollectedMask,
+    onPlateActivated
 }: PressurePlatesProps) {
     if (pressurePlatesRequired === 0 || plates.length === 0) return null;
 
@@ -135,6 +148,7 @@ export function PressurePlates({
                         worldZ={worldZ} 
                         color={color} 
                         isActive={isActive} 
+                        onActivated={onPlateActivated}
                     />
                 );
             })}

@@ -8,10 +8,7 @@ import * as Client from "colyseus.js";
 import { toast } from "sonner";
 import { GameScreen } from "@/screens/GameScreen";
 import { ResultsOverlay } from "@/components/game/ResultsOverlay";
-
-// const connect = async () => {
-//   console.log("soloMode from initPayload:", initPayload.soloMode);
-// }
+import { useSounds } from "@/hooks/use-sounds";
 
 /** Build a redirect URL back to the platform with query params */
 function buildReturnUrl(returnUrl: string, params: Record<string, string | number>): string {
@@ -254,7 +251,7 @@ const Index = () => {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const resultsReasonRef = useRef<"gameover" | "abandoned">("gameover");
-
+  const { play: playSound } = useSounds();
 
   // Show results overlay when game ends (stay on /play so LiveKit voice persists)
   useEffect(() => {

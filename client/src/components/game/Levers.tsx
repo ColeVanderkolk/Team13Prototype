@@ -70,6 +70,7 @@ function SingleLever({
   position,
   isSolved,
   isFlashing,
+  onActivated,
 }: {
   worldX: number;
   worldZ: number;
@@ -77,6 +78,7 @@ function SingleLever({
   position: number; // 1-based required pull order, also the shape's side count
   isSolved: boolean; // already pulled correctly, in order
   isFlashing: boolean; // briefly true right after a wrong-order pull, on every lever at once
+  onActivated: () => void;
 }) {
   const shapeGeometry = useMemo(() => buildShapeGeometry(position, 0.16), [position]);
 
@@ -138,6 +140,7 @@ type LeversProps = {
   gridHeight: number;
   leversPulledInOrder: number;
   wrongPullKey: number; // increments each time the server reports a wrong-order pull
+  onLeverPulled: () => void; 
 };
 
 // levers spawn scattered through the maze, each mounted on whatever wall the maze generator already placed there.
@@ -149,6 +152,7 @@ export function Levers({
   gridHeight,
   leversPulledInOrder,
   wrongPullKey,
+  onLeverPulled,
 }: LeversProps) {
   const [isFlashing, setIsFlashing] = useState(false);
   const prevWrongPullKeyRef = useRef(wrongPullKey);
@@ -185,6 +189,7 @@ export function Levers({
             position={index + 1}
             isSolved={index < leversPulledInOrder}
             isFlashing={isFlashing}
+            onActivated={onLeverPulled}
           />
         );
       })}

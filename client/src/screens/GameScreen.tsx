@@ -11,8 +11,8 @@ import { NoiseFieldOverlay, type NoiseFieldHandle } from "@/components/game/Nois
 import { StageAnnouncement } from "@/components/game/StageAnnouncement";
 import { DevStageControls } from "@/components/game/DevStageControls";
 import { MazeBoard } from "@/components/game/MazeBoard";
-import { Compass } from "@/components/game/Compass";
 import { LeverPrompt } from "@/components/game/LeverPrompt";
+import { useSounds } from "@/hooks/use-sounds";
 
 // Error boundary to catch silent Canvas/Three.js crashes
 class CanvasErrorBoundary extends Component<
@@ -131,6 +131,7 @@ interface GameScreenProps {
     leverCellX: number[];
     leverCellY: number[];
     leverWallDir: number[];
+    onLeverPulled?: () => void;
 }
 
 export const GameScreen = ({
@@ -199,6 +200,10 @@ export const GameScreen = ({
     const settingsCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const SETTINGS_CLOSE_MS = 300; 
 
+    
+    const { play: playSound, sfxVolume, setSfxVolume } = useSounds(); 
+    const prevExitUnlocked = useRef(exitUnlocked);
+    const prevStage = useRef(stage);
 
     // Dev: client-side stage override for effects testing (does NOT affect game)
     const [fakeStage, setFakeStage] = useState<number | null>(null);
@@ -224,6 +229,20 @@ export const GameScreen = ({
         }, SETTINGS_CLOSE_MS);
     };
     
+    // exit unlocked
+    useEffect(() => {
+      if (exitUnlocked && !prevExitUnlocked.current) {
+        playSound("unlock");
+      }
+      prevExitUnlocked.current = exitUnlocked;
+    }, [exitUnlocked]);
+
+    useEffect(() => {
+      if (stage >prevStage.current) {
+        playSound("progress");
+      }
+    }, [stage]);
+
   return (
     <div className="isolate w-full h-screen relative overflow-hidden bg-canvas">
       <div
@@ -623,6 +642,7 @@ export const GameScreen = ({
           leverCellX={leverCellX}
           leverCellY={leverCellY}
           leverWallDir={leverWallDir}
+          onLeverPulled={() => playSound("lightSwitch")}
           compassYawRef={compassYawRef}
           leverInRangeRef={leverInRangeRef}
           disabled={showResults}
