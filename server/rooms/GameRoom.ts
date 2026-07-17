@@ -341,10 +341,45 @@ export class GameRoom extends Room<GameState> {
         this.disconnect();
     }
 
+    // this level's actual obstacle positions (whichever type is active), so collectibles can
+    // be kept clear of them — interacting with a collectible and an obstacle almost
+    // simultaneously was causing bugs
+    private getObstaclePositions(): { x: number; y: number }[] {
+        const positions: { x: number; y: number }[] = [];
+
+        if (this.state.obstacleType === "pressurePlates" || this.state.obstacleType === "keys") {
+            const plates = [
+                { x: this.state.plate0X, y: this.state.plate0Y },
+                { x: this.state.plate1X, y: this.state.plate1Y },
+                { x: this.state.plate2X, y: this.state.plate2Y },
+            ];
+            for (const p of plates) if (p.x >= 0) positions.push(p);
+        }
+
+        if (this.state.obstacleType === "keys") {
+            const keys = [
+                { x: this.state.key0X, y: this.state.key0Y },
+                { x: this.state.key1X, y: this.state.key1Y },
+                { x: this.state.key2X, y: this.state.key2Y },
+            ];
+            for (const k of keys) if (k.x >= 0) positions.push(k);
+        }
+
+        if (this.state.obstacleType === "levers") {
+            for (let i = 0; i < this.state.leverCellX.length; i++) {
+                positions.push({ x: this.state.leverCellX[i], y: this.state.leverCellY[i] });
+            }
+        }
+
+        return positions;
+    }
+
     private generateInitialCollectibles() {
+        const MIN_DIST_FROM_OBSTACLE = 2;
         const collectibles = new ArraySchema<Collectible>();
         const candidates: Array<{ x: number; y: number; rank: number }> = [];
         const mazeWalls = Array.from(this.state.mazeWalls);
+        const obstaclePositions = this.getObstaclePositions();
 
         for (let y = 0; y < this.state.gridHeight; y++) {
             for (let x = 0; x < this.state.gridWidth; x++) {
@@ -354,6 +389,11 @@ export class GameRoom extends Room<GameState> {
                 // Tunnel ends are reserved for the exit, so pickups never appear past the level beacon.
                 if (isDeadEndCell(this.state.gridWidth, this.state.gridHeight, mazeWalls, x, y)) continue;
                 if (distanceFromStart < 3 || distanceFromExit < 2) continue;
+
+                const tooCloseToObstacle = obstaclePositions.some(
+                    (o) => Math.abs(x - o.x) + Math.abs(y - o.y) < MIN_DIST_FROM_OBSTACLE,
+                );
+                if (tooCloseToObstacle) continue;
 
                 candidates.push({
                     x,
