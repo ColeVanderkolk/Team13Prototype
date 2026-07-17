@@ -47,7 +47,8 @@ export class GameRoom extends Room<GameState> {
     private readonly LEVEL_CLEAR_SCORE = 100;
     private readonly STREAK_COLLECT_FRACTION = 0.5;
     private readonly STREAK_CAP = 5;
-    private readonly COLLECTIBLE_PICKUP_RADIUS = 0.7;
+    private readonly COLLECTIBLE_PICKUP_RADIUS = 0.7; // used for key pickup — leave as-is
+    private readonly SCORE_COLLECTIBLE_RADIUS = 0.4; // tighter radius, score collectibles only
     private isSoloMode: boolean = false; 
     private isDevMode: boolean = false;
     private gameStartTime: number = 0;
@@ -410,7 +411,7 @@ export class GameRoom extends Room<GameState> {
 
         const collectible = this.state.collectibles[index];
         const distance = Math.hypot(player.x - collectible.x, player.y - collectible.y);
-        if (distance > this.COLLECTIBLE_PICKUP_RADIUS) return;
+        if (distance > this.SCORE_COLLECTIBLE_RADIUS) return;
 
         this.state.collectiblesCollectedThisLevel += 1;
         this.state.totalScore += (collectible.score || this.COLLECTIBLE_SCORE) * this.state.scoreMultiplier;

@@ -5,7 +5,7 @@ import type * as Client from "colyseus.js";
 import { CollectibleSimple } from "../../../../server/collectibles/CollectibleSimple.ts";
 
 const CELL_SIZE = 1.8;
-const PICKUP_RADIUS = 0.5;
+const PICKUP_RADIUS = 0.35; // tightened — matches SCORE_COLLECTIBLE_RADIUS on the server
 
 interface MazeCollectible {
   x: number;
@@ -56,8 +56,10 @@ function CollectibleSimpleObject({
     hasReportedRef.current = false;
 
     return () => {
-      // Cleanup uses the prototype collect method so the object is removed the same way as in Amongusstyle.
-      instance.collect(scene as any);
+      // real teardown (component unmounting, e.g. level change) — collect() only hides/dims
+      // it and deliberately never touches the scene graph, so this is needed here to avoid
+      // leaking the object and its light
+      instance.dispose(scene as any);
       instanceRef.current = null;
     };
   }, [scene, worldX, worldZ]);

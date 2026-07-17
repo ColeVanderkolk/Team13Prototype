@@ -23,10 +23,16 @@ export const useSounds = () => {
     }
 
     const play = useCallback((name: SoundName) => {
-        const audio = audioRef.current![name];
-        audio.volume = volumeRef.current;
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
+        // deferred to the next tick so this never runs inside the caller's current frame —
+        // several callers trigger this from inside a useFrame loop, and mutating an <audio>
+        // element (currentTime, play()) can do real synchronous work that would otherwise
+        // stall that frame and show up as a stutter right at the moment of the sound
+        setTimeout(() => {
+            const audio = audioRef.current![name];
+            audio.volume = volumeRef.current;
+            audio.currentTime = 0;
+            audio.play().catch(() => {});
+        }, 0);
     }, []);
 
     const setSfxVolume = useCallback((volume: number) => {
