@@ -182,7 +182,7 @@ const MainMenu = () => {
               />
               {devUnlocked && (
                 <p className="text-[0.65rem] text-emerald-400">
-                  Dev mode on - V toggles the camera, stage controls enabled
+                  Dev mode on - V toggles the camera, N toggles noclip, stage controls enabled
                 </p>
               )}
             </div>
