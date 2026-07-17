@@ -79,6 +79,9 @@ export class GameRoom extends Room<GameState> {
         this.setState(new GameState());
         this.isSoloMode = options?.soloMode === true;
         this.isDevMode = options?.devMode === true;
+        // the game is designed around exactly 1 (solo) or 3 (multiplayer) players — nothing
+        // else in the room actually enforced this, so a 4th+ person could freely join
+        this.maxClients = this.isSoloMode ? 1 : 3;
         // 20Hz matches the client's position send rate; remote players are already
         // visually smoothed, and 3x fewer patches means far fewer client re-renders
         this.setPatchRate(1000 / 20);
