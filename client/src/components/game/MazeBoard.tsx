@@ -312,10 +312,12 @@ function drawStrokesToCanvas(
 function GraffitiWall({
   segment,
   strokes,
+  previewStroke,
   colorForSession,
 }: {
   segment: WallSegment;
   strokes: GraffitiStrokeData[];
+  previewStroke: GraffitiStrokeData | null;
   colorForSession: (sessionId: string) => string;
 }) {
   const alongX = segment.size[0] > segment.size[2];
@@ -344,13 +346,20 @@ function GraffitiWall({
   useEffect(() => () => faces.forEach((face) => face.texture.dispose()), [faces]);
 
   useEffect(() => {
+    // previewStroke is only non-null for the ONE wall currently being drawn on, so this
+    // effect re-fires on every mouse-move sample only for that wall - every other wall's
+    // `strokes` stays referentially stable (see confirmedStrokesByWall below) and never
+    // redraws just because someone is drawing elsewhere in the maze.
+    const allStrokes = previewStroke && previewStroke.points.length >= 2
+      ? [...strokes, previewStroke]
+      : strokes;
     for (const face of faces) {
       const ctx = face.canvas.getContext("2d");
       if (!ctx) continue;
-      drawStrokesToCanvas(ctx, strokes.filter((stroke) => stroke.side === face.side), colorForSession);
+      drawStrokesToCanvas(ctx, allStrokes.filter((stroke) => stroke.side === face.side), colorForSession);
       face.texture.needsUpdate = true;
     }
-  }, [colorForSession, faces, strokes]);
+  }, [colorForSession, faces, strokes, previewStroke]);
 
   return (
     <group position={[segment.position[0], segment.position[1], segment.position[2]]} rotation={[0, rotY, 0]}>
@@ -671,6 +680,17 @@ export function MazeBoard({
   const drawingRef = useRef<{ wallKey: string; side: number; eraser: boolean; points: number[] } | null>(null);
   const pendingCounterRef = useRef(0);
 
+  // Wipe local-only, not-yet-confirmed graffiti state on every level change. Without this,
+  // a stroke drawn in the last ~1.5s before the level advances stays in pendingStrokes (or
+  // preview) after the new maze loads, and since wall keys are just grid coordinates + side,
+  // the new maze can easily have a wall reusing that same key - so old (possibly erased)
+  // graffiti could reappear on an unrelated wall in the new level.
+  useEffect(() => {
+    setPendingStrokes([]);
+    setPreview(null);
+    drawingRef.current = null;
+  }, [seed]);
+
   const { play: playSound, sfxVolume, setSfxVolume } = useSounds();
   const onLeverPulledRef = useRef(onLeverPulled);
   onLeverPulledRef.current = onLeverPulled;
@@ -811,7 +831,11 @@ export function MazeBoard({
     return (sessionId: string) => colorBySession.get(sessionId) ?? GRAFFITI_FALLBACK_COLOR;
   }, [players]);
 
-  const strokesByWall = useMemo(() => {
+  // Confirmed + just-sent strokes only - deliberately excludes the live in-progress
+  // preview, so this only changes when a stroke actually completes (rare) rather than on
+  // every mouse-move sample. That keeps every wall EXCEPT the one currently being drawn on
+  // from redrawing at all while someone drags out a stroke anywhere in the maze.
+  const confirmedStrokesByWall = useMemo(() => {
     const byWall = new Map<string, GraffitiStrokeData[]>();
     const add = (stroke: GraffitiStrokeData & { wallKey: string }) => {
       const list = byWall.get(stroke.wallKey);
@@ -820,9 +844,8 @@ export function MazeBoard({
     };
     graffiti.forEach(add);
     pendingStrokes.forEach(add);
-    if (preview && preview.points.length >= 2) add(preview);
     return byWall;
-  }, [graffiti, pendingStrokes, preview]);
+  }, [graffiti, pendingStrokes]);
 
   const wallSegmentByKey = useMemo(
     () => new Map(wallSegments.map((segment) => [segment.key, segment])),
@@ -1463,15 +1486,22 @@ export function MazeBoard({
           />
         )}
 
-        {/* Shared freeform graffiti, one drawing surface per wall that has strokes */}
-        {Array.from(strokesByWall.entries()).map(([wallKey, wallStrokes]) => {
+        {/* Shared freeform graffiti, one drawing surface per wall that has strokes (or that
+            the local player is actively drawing the very first mark on) */}
+        {Array.from(
+          new Set([
+            ...confirmedStrokesByWall.keys(),
+            ...(preview ? [preview.wallKey] : []),
+          ]),
+        ).map((wallKey) => {
           const segment = wallSegmentByKey.get(wallKey);
           if (!segment) return null;
           return (
             <GraffitiWall
               key={wallKey}
               segment={segment}
-              strokes={wallStrokes}
+              strokes={confirmedStrokesByWall.get(wallKey) ?? []}
+              previewStroke={preview && preview.wallKey === wallKey ? preview : null}
               colorForSession={colorForSession}
             />
           );
