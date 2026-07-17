@@ -8,7 +8,7 @@ import type * as Client from "colyseus.js";
  * the existing server-side devStageUp message.
  *
  * Enabled on localhost or when isDevMode is true.
- * Shows a small "DEV" pill in bottom-left — click to expand.
+ * Shows a small "DEV" pill in bottom-right — click to expand.
  * Also toggleable via backtick or F9 keys.
  */
 
@@ -66,7 +66,7 @@ export function DevStageControls({ room, isDevMode, stage, onFakeStageChange }: 
       <button
         type="button"
         onClick={() => setExpanded(true)}
-        className="fixed bottom-3 left-3 z-[100] rounded border border-yellow-500/30 bg-black/70 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-yellow-400/80 backdrop-blur-sm transition-opacity hover:opacity-100 opacity-50"
+        className="fixed bottom-3 right-3 z-[100] rounded border border-yellow-500/30 bg-black/70 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-yellow-400/80 backdrop-blur-sm transition-opacity hover:opacity-100 opacity-50"
         title="Open dev controls (` or F9)"
       >
         DEV
@@ -77,7 +77,7 @@ export function DevStageControls({ room, isDevMode, stage, onFakeStageChange }: 
   // Expanded panel
   return (
     <div
-      className="fixed bottom-3 left-3 z-[100] flex flex-col gap-2 rounded-lg border border-white/10 bg-black/85 p-3 backdrop-blur-sm"
+      className="fixed bottom-3 right-3 z-[100] flex flex-col gap-2 rounded-lg border border-white/10 bg-black/85 p-3 backdrop-blur-sm"
       data-ui="dev-stage-controls"
     >
       <div className="flex items-center justify-between gap-4">

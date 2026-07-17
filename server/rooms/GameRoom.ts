@@ -494,7 +494,15 @@ export class GameRoom extends Room<GameState> {
     }
 
     private canAcceptPosition(sessionId: string, player: Player, x: number, y: number) {
-        if (!this.canOccupy(x, y)) return false;
+        if (this.isDevMode) {
+            // Dev rooms allow noclip: skip wall checks but stay inside the board
+            const min = -0.5 + this.PLAYER_RADIUS;
+            if (x < min || y < min) return false;
+            if (x > this.state.gridWidth - 0.5 - this.PLAYER_RADIUS) return false;
+            if (y > this.state.gridHeight - 0.5 - this.PLAYER_RADIUS) return false;
+        } else if (!this.canOccupy(x, y)) {
+            return false;
+        }
 
         const now = Date.now();
         const lastAccepted = this.lastAcceptedAt.get(sessionId) ?? now;
@@ -897,15 +905,20 @@ export class GameRoom extends Room<GameState> {
         if (raw.length % 2 !== 0) return;
         if (!raw.every((n) => typeof n === "number" && Number.isFinite(n))) return;
 
-        // Cap strokes per wall and in total so game state can't be flooded
-        let total = 0;
-        let onThisWall = 0;
-        this.state.graffiti.forEach((stroke) => {
-            total++;
-            if (stroke.wallKey === message.wallKey) onThisWall++;
-        });
-        if (total >= this.STROKE_MAX_TOTAL) return;
-        if (onThisWall >= this.STROKE_MAX_PER_WALL) return;
+        // Cap strokes per wall and in total so game state can't be flooded.
+        // ERASER strokes are exempt: the caps exist to stop spam, but blocking
+        // erasers meant busy walls could never be cleaned - erasing silently
+        // failed once a wall hit the cap.
+        if (message.eraser !== true) {
+            let total = 0;
+            let onThisWall = 0;
+            this.state.graffiti.forEach((stroke) => {
+                total++;
+                if (stroke.wallKey === message.wallKey) onThisWall++;
+            });
+            if (total >= this.STROKE_MAX_TOTAL) return;
+            if (onThisWall >= this.STROKE_MAX_PER_WALL) return;
+        }
 
         const stroke = new GraffitiStroke();
         stroke.wallKey = message.wallKey as string;

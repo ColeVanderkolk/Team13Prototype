@@ -605,6 +605,7 @@ export const GameScreen = ({
       >
 
         <MazeBoard
+          viewToggleEnabled={isDevMode}
           gridWidth={gridWidth}
           gridHeight={gridHeight}
           mazeWalls={mazeWalls}

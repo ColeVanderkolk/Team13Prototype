@@ -108,6 +108,8 @@ interface MazeBoardProps {
   room: Client.Room | null;
   countdown?: number;
   currentSessionId?: string | null;
+  /** Dev-only: enables the V key first-person camera toggle */
+  viewToggleEnabled?: boolean;
 
   // preessure plates
   pressurePlatesRequired: number;
@@ -317,7 +319,9 @@ function GraffitiWall({
   colorForSession: (sessionId: string) => string;
 }) {
   const alongX = segment.size[0] > segment.size[2];
-  const faceLength = alongX ? segment.size[0] : segment.size[2];
+  // Extend the drawing surface by one post-width (half over each corner post) so
+  // adjacent walls' surfaces meet at post centers - you can draw across junctions
+  const faceLength = (alongX ? segment.size[0] : segment.size[2]) + WALL_THICKNESS;
   const faceHeight = segment.size[1];
   const faceOffset = (alongX ? segment.size[2] : segment.size[0]) / 2 + 0.018;
   // -PI/2 (not +PI/2) so the canvas "u" axis lines up with world +z on north-south walls
@@ -599,6 +603,7 @@ export function MazeBoard({
   room,
   countdown,
   currentSessionId,
+  viewToggleEnabled,
 
   pressurePlatesRequired,
   plate0X,
@@ -650,7 +655,8 @@ export function MazeBoard({
   });
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const [leverWrongPullKey, setLeverWrongPullKey] = useState(0);
-  const firstPersonRef = useRef(false); // toggled with the V key
+  const firstPersonRef = useRef(true); // toggled with the V key
+  const noclipRef = useRef(false); // dev-only: N key - walk through walls
   const fpYawRef = useRef(0); // horizontal facing while in first person
   const fpPitchRef = useRef(0); // vertical look while in first person
   const lastSentAtRef = useRef(0);
@@ -923,7 +929,13 @@ export function MazeBoard({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "KeyN") {
+        if (!viewToggleEnabled) return; // noclip is a dev-mode feature
+        noclipRef.current = !noclipRef.current;
+        return;
+      }
       if (event.code === "KeyV") {
+        if (!viewToggleEnabled) return; // camera toggle is a dev-mode feature
         firstPersonRef.current = !firstPersonRef.current;
         if (firstPersonRef.current) {
           requestLock();
@@ -986,7 +998,7 @@ export function MazeBoard({
       canvas.removeEventListener("click", handleCanvasClick);
       if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
-  }, [gl, room]);
+  }, [gl, room, viewToggleEnabled]);
 
   // Graffiti drawing: hold left-click to draw on a nearby wall, right-click to erase.
   // In first person (mouse captured) you paint with the crosshair like a spray can;
@@ -1006,7 +1018,8 @@ export function MazeBoard({
     // (strokes drawn there get u flipped so they land exactly where you aimed)
     const hitToWallUv = (segment: WallSegment, hit: THREE.Vector3): [number, number, number] => {
       const alongX = segment.size[0] > segment.size[2];
-      const length = alongX ? segment.size[0] : segment.size[2];
+      // Match the extended drawing surface (covers half a post at each end)
+      const length = (alongX ? segment.size[0] : segment.size[2]) + WALL_THICKNESS;
       const along = alongX
         ? hit.x - (segment.position[0] - length / 2)
         : hit.z - (segment.position[2] - length / 2);
@@ -1053,7 +1066,12 @@ export function MazeBoard({
         if (Math.hypot(nearDx, nearDz) > CELL_SIZE * GRAFFITI_RANGE) continue;
 
         boxCenter.set(segment.position[0], segment.position[1], segment.position[2]);
-        boxSize.set(segment.size[0], segment.size[1], segment.size[2]);
+        const segAlongX = segment.size[0] > segment.size[2];
+        boxSize.set(
+          segment.size[0] + (segAlongX ? WALL_THICKNESS : 0),
+          segment.size[1],
+          segment.size[2] + (segAlongX ? 0 : WALL_THICKNESS),
+        );
         box.setFromCenterAndSize(boxCenter, boxSize);
 
         if (raycaster.ray.intersectBox(box, hitPoint)) {
@@ -1333,14 +1351,20 @@ export function MazeBoard({
         const stepX = moveX * speed * Math.min(delta, 0.05);
         const stepY = moveY * speed * Math.min(delta, 0.05);
         const nextX = localPositionRef.current.x + stepX;
-
-        if (canOccupy(nextX, localPositionRef.current.y)) {
-          localPositionRef.current.x = nextX;
-        }
-
         const nextY = localPositionRef.current.y + stepY;
-        if (canOccupy(localPositionRef.current.x, nextY)) {
-          localPositionRef.current.y = nextY;
+
+        if (noclipRef.current) {
+          // Dev noclip: ignore walls, just stay inside the board
+          const pad = -0.5 + PLAYER_RADIUS;
+          localPositionRef.current.x = Math.max(pad, Math.min(gridWidth - 0.5 - PLAYER_RADIUS, nextX));
+          localPositionRef.current.y = Math.max(pad, Math.min(gridHeight - 0.5 - PLAYER_RADIUS, nextY));
+        } else {
+          if (canOccupy(nextX, localPositionRef.current.y)) {
+            localPositionRef.current.x = nextX;
+          }
+          if (canOccupy(localPositionRef.current.x, nextY)) {
+            localPositionRef.current.y = nextY;
+          }
         }
       }
     }

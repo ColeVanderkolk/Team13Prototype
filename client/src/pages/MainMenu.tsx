@@ -12,11 +12,16 @@ import { Users, Swords, LogIn } from "lucide-react";
 
 const NAME_STORAGE_KEY = "fyw-player-name";
 
+const DEV_PASSWORD = "Team13"; // note: client-side only - keeps casual players out, not secret from anyone reading the code
+
 const MainMenu = () => {
     const navigate = useNavigate();
     const { toast } = useToast();
     const [playerName, setPlayerName] = useState("");
     const [joinRoomId, setJoinRoomId] = useState("");
+    const [showDevInput, setShowDevInput] = useState(false);
+    const [devPassword, setDevPassword] = useState("");
+    const devUnlocked = devPassword === DEV_PASSWORD;
 
     const resolvedName = playerName.trim();
 
@@ -48,6 +53,7 @@ const MainMenu = () => {
       isAdmin: false,
       soloMode,
       roomId,
+      devMode: devUnlocked,
     };
     navigate("/play", { state: { initPayload } });
   };
@@ -153,6 +159,34 @@ const MainMenu = () => {
               <span className="text-sm font-semibold">Join</span>
             </Button>
           </div>
+        </section>
+        <section className="space-y-2 text-left" aria-label="Developer options">
+          <button
+            type="button"
+            onClick={() => setShowDevInput((v) => !v)}
+            className="text-[0.6rem] uppercase tracking-[0.2em] text-slate-600 hover:text-slate-400 transition-colors"
+          >
+            Dev
+          </button>
+          {showDevInput && (
+            <div className="space-y-1">
+              <Input
+                id="dev-password"
+                type="password"
+                value={devPassword}
+                onChange={(e) => setDevPassword(e.target.value)}
+                placeholder="Dev password"
+                autoComplete="off"
+                className="h-10 bg-white/5 border-white/10 text-white placeholder:text-slate-600 text-sm"
+                aria-label="Developer password"
+              />
+              {devUnlocked && (
+                <p className="text-[0.65rem] text-emerald-400">
+                  Dev mode on - V toggles the camera, stage controls enabled
+                </p>
+              )}
+            </div>
+          )}
         </section>
       </main>
     </div>
