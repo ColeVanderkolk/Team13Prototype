@@ -1404,9 +1404,15 @@ export function MazeBoard({
 
       <ambientLight intensity={0.72} />
       <directionalLight position={[8, 14, 10]} intensity={2.1} castShadow />
-      {exitUnlocked && (
-        <pointLight position={[exitWorldX, 2.4, exitWorldZ]} color="#facc15" intensity={2.2 + playersAtExit * 1.5} distance={8 + playersAtExit * 2} />
-      )}
+      {/* always mounted, intensity toggled instead of adding/removing — this one fires the
+          instant an obstacle (lever, plate, key) gets solved, exactly when players would
+          otherwise notice a stutter from a light being added to the scene */}
+      <pointLight
+        position={[exitWorldX, 2.4, exitWorldZ]}
+        color="#facc15"
+        intensity={exitUnlocked ? 2.2 + playersAtExit * 1.5 : 0}
+        distance={8 + playersAtExit * 2}
+      />
 
       <group>
         <mesh receiveShadow position={[0, -0.08, 0]}>
@@ -1478,6 +1484,7 @@ export function MazeBoard({
           localPositionRef={localPositionRef}
           room={room}
           onCollection={() => playSound("collect")}
+          seed={seed}
         />
 
         {orderedPlayers.map(([sessionId, player]) => (

@@ -97,9 +97,10 @@ function SingleLever({
           side={THREE.DoubleSide}
         />
       </mesh>
-      {isLit && (
-        <pointLight position={[0, 1.05, 0.15]} color={shapeColor} intensity={1.2} distance={2} />
-      )}
+      {/* always mounted, intensity toggled instead of adding/removing — removing a light from
+          the scene forces Three.js to recompile shaders for every other lit material in view,
+          which is what was causing a stutter every time a lever's lit state changed */}
+      <pointLight position={[0, 1.05, 0.15]} color={shapeColor} intensity={isLit ? 1.2 : 0} distance={2} />
 
       {/* body: a plain box flush against the wall */}
       {LEVER_BODY_MODEL_URL ? (

@@ -83,8 +83,10 @@ function Plate({
                 <meshBasicMaterial ref={ringRef} color={color} transparent opacity={isActive ? 0.95 : 0.5} side={THREE.DoubleSide} />
             </mesh>
 
-            {/* colored glow that only turns on when someone is standing on it */}
-            {isActive && <pointLight position={[worldX, 0.8, worldZ]} color={color} intensity={2.0} distance={2.5} />}
+            {/* always mounted, intensity toggled instead of adding/removing — this one matters
+                even more than most, since isActive can flip on/off continuously as players step
+                on and off a plate, and removing a light forces a shader recompile every time */}
+            <pointLight position={[worldX, 0.8, worldZ]} color={color} intensity={isActive ? 2.0 : 0} distance={2.5} />
         </group>
     );
 }
