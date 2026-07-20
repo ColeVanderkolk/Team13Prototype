@@ -68,6 +68,9 @@ const DeferredEffects = () => {
   );
 };
 
+// Must stay in sync with PLAYER_COLORS in MazeBoard.tsx - both index by player.slot
+const TEAM_COLORS = ["#38f8b6", "#ff5a7a", "#facc15", "#a78bfa", "#fb923c", "#67e8f9"];
+
 interface PlayerState {
     x: number;
     y: number;
@@ -534,6 +537,50 @@ export const GameScreen = ({
           </div>
         </div>
       </div>
+
+      {/* Team roster - who's playing and which color they are (colors come from
+          player.slot, so they stay put when someone joins or leaves) */}
+      {players.size > 0 && (
+        <div className="absolute right-4 top-24 z-10">
+          <div
+            className="relative min-w-[7.25rem] rounded-none border border-solid bg-canvas/50 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-inset ring-white/[0.06] backdrop-blur-[4px]"
+            style={{ borderColor: POLAR_HUD.border }}
+            data-ui="game-team-chip"
+          >
+            <HudCornerLs />
+            <div className="relative z-[1]">
+              <p className="font-montreal text-[9px] uppercase leading-tight tracking-[0.12em] text-slate-300">
+                Team
+              </p>
+              <ul className="mt-1.5 space-y-1.5">
+                {Array.from(players.values())
+                  .sort((a, b) => a.slot - b.slot)
+                  .map((player) => {
+                    const isMe = player.sessionId === room?.sessionId;
+                    const color = TEAM_COLORS[player.slot % TEAM_COLORS.length];
+                    return (
+                      <li key={player.sessionId} className="flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }}
+                          aria-hidden
+                        />
+                        <span
+                          className={`font-montreal text-[11px] leading-none ${
+                            isMe ? "font-bold text-white" : "text-slate-300"
+                          }`}
+                        >
+                          {player.name}
+                          {isMe && <span className="ml-1 text-slate-500">(you)</span>}
+                        </span>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Exit waiting indicator — only shows when exit is unlocked and someone is there */}
       {exitUnlocked && playersAtExit > 0 && (
