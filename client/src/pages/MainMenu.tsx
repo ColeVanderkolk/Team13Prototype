@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import type { GameInitPayload } from "@/lib/session-storage";
+import { BG_MUSIC_TRACKS } from "@/lib/music";
 import { Users, Swords, LogIn } from "lucide-react";
 
 const NAME_STORAGE_KEY = "fyw-player-name";
@@ -37,6 +38,8 @@ const MainMenu = () => {
     }
     localStorage.setItem(NAME_STORAGE_KEY, name);
 
+    const bgMusicUrl = BG_MUSIC_TRACKS[Math.floor(Math.random() * BG_MUSIC_TRACKS.length)];
+
     // Same-origin by default: in a combined (single-instance) deploy the client
     // is served by the Colyseus server, so connect back to the host it loaded
     // from. VITE_SERVER_URL overrides this (e.g. split client/server deploys);
@@ -54,6 +57,7 @@ const MainMenu = () => {
       soloMode,
       roomId,
       devMode: devUnlocked,
+      bgMusicUrl,
     };
     navigate("/play", { state: { initPayload } });
   };

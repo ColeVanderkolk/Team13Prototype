@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { GameScreen } from "@/screens/GameScreen";
 import { ResultsOverlay } from "@/components/game/ResultsOverlay";
 import { useSounds } from "@/hooks/use-sounds";
+import { BG_MUSIC_TRACKS } from "@/lib/music";
 
 /** Build a redirect URL back to the platform with query params */
 function buildReturnUrl(returnUrl: string, params: Record<string, string | number>): string {
@@ -251,6 +252,10 @@ const Index = () => {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const resultsReasonRef = useRef<"gameover" | "abandoned">("gameover");
+
+  // Audio
+  const bgMusicRef =  useRef<HTMLAudioElement>(new Audio()); //useRef<HTMLAudioElement | null>(null);
+  const [bgMusicVolume, setBgMusicVolume] = useState(0.3);
   const { play: playSound } = useSounds();
 
   // Show results overlay when game ends (stay on /play so LiveKit voice persists)
@@ -527,6 +532,116 @@ const Index = () => {
     }
   }, [gameState.gameStarted, phase, room]);
 
+  // Background music — start when game phase begins, stop on game over or unmount
+    useEffect(() => {
+      const url = initPayload?.bgMusicUrl;
+      if (!url || phase !== "game") return;
+
+      let cancelled = false; 
+      const audio = bgMusicRef.current;
+      if (!audio) return;
+
+      audio.loop = false;
+      audio.volume = 0.3;
+      bgMusicRef.current = audio;
+
+      let currentIndex = -1; 
+
+      const pickNext = () => {
+        let nextIndex: number;
+        do {
+          nextIndex = Math.floor(Math.random() * BG_MUSIC_TRACKS.length);
+        } while (nextIndex === currentIndex && BG_MUSIC_TRACKS.length > 1);
+        currentIndex = nextIndex;
+        return BG_MUSIC_TRACKS[nextIndex];
+      };
+
+      
+      // pick a random track different from the current one
+      const playNext = () => {
+        if (cancelled) return; // don't play if this effect was cleaned up
+        const track = pickNext();
+
+        audio.pause();  
+        audio.src = track;
+        audio.load();
+
+        audio.play().catch(() => {});
+        audio.play().catch((e) => {if (!cancelled) console.error("Play failed:", e)});
+
+        console.log("Now playing:", audio.src);
+      };
+
+      audio.addEventListener("ended", playNext);
+      audio.play().catch((e) =>{
+        if (cancelled) return;
+        console.error("Audio error", e, audio.src);
+      });
+
+      currentIndex = BG_MUSIC_TRACKS.indexOf(url);
+      audio.src = url; 
+      audio.load();
+      
+      console.log("Playing first:", url);
+      audio.play().catch((e) => console.error("Play failed:", e));
+
+      const startTimeout = setTimeout(() => {
+          if (cancelled) return;
+          audio.play().catch((e) => {
+              if (e.name !== "AbortError") console.error("Play failed:", e);
+              // Retry on user interaction if autoplay blocked
+              const resume = () => audio.play().catch(() => {});
+              window.addEventListener("pointerdown", resume, { once: true });
+              window.addEventListener("keydown", resume, { once: true });
+          });
+      }, 100);
+
+      // debugging dev tools:
+      (window as any).__bgAudio = audio;
+      (window as any).__playNext = playNext;
+      
+      audio.play().catch(() => {
+        // Autoplay blocked — start on first user interaction
+        const resume = () => {
+          audio.play().catch(() => {});
+          window.removeEventListener("pointerdown", resume);
+          window.removeEventListener("keydown", resume);
+        };
+        window.addEventListener("pointerdown", resume, { once: true });
+        window.addEventListener("keydown", resume, { once: true });
+      });
+
+      return () => {
+        cancelled = true;
+        clearTimeout(startTimeout);
+        audio.removeEventListener("ended", playNext);
+        audio.pause();
+        audio.src = "";
+        bgMusicRef.current = null;
+      };
+    }, [phase]);
+
+    // Sync volume slider to audio element
+    useEffect(() => {
+      if (bgMusicRef.current) {
+        bgMusicRef.current.volume = bgMusicVolume;
+      }
+    }, [bgMusicVolume]);
+
+    // Fade out music on game over
+    useEffect(() => {
+      if (!gameState.isGameOver || !bgMusicRef.current) return;
+      const audio = bgMusicRef.current;
+      const fade = setInterval(() => {
+        if (audio.volume > 0.05) {
+          audio.volume = Math.max(0, audio.volume - 0.02);
+        } else {
+          clearInterval(fade);
+          audio.pause();
+        }
+      }, 100);
+      return () => clearInterval(fade);
+    }, [gameState.isGameOver]);
 
   if (!initPayload) {
     return (
@@ -547,8 +662,6 @@ const Index = () => {
       </div>
     );
   }
-
-  console.log("Current phase", phase);
   
   if (phase === "waiting") {
     return (
@@ -611,6 +724,8 @@ const Index = () => {
         seed={gameState.seed}
         countdown={gameState.countdown}
         showResults={showResults}
+        bgMusicVolume={initPayload?.bgMusicUrl ? bgMusicVolume : undefined}
+        onBgMusicVolumeChange={initPayload?.bgMusicUrl ? setBgMusicVolume : undefined}
         onGameAbandoned={() => {
           room?.leave();
           resultsReasonRef.current = "abandoned";

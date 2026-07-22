@@ -3,7 +3,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import * as Client from "colyseus.js";
 import { Component, useRef, useEffect, useState, type MutableRefObject } from "react";
 import type { ErrorInfo, ReactNode } from "react";
-import { Info, Settings, X } from "lucide-react";
+import { Info, Settings, X, Volume2, VolumeX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GameControls } from "@/components/game/GameControls";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
@@ -102,10 +102,11 @@ interface GameScreenProps {
     isSoloMode: boolean;
     isDevMode: boolean;
     countdown?: number;
+    bgMusicVolume?: number;
+    onBgMusicVolumeChange?:  (volume: number) => void;
     onGameAbandoned?: ()=> void;
     showResults?: boolean; // post-game results overlay is showing — freezes movement/interaction
 
-    
     pressurePlatesRequired: number;
     plate0X: number;
     plate0Y: number;
@@ -134,6 +135,82 @@ interface GameScreenProps {
     onLeverPulled?: () => void;
 }
 
+/** Horizontal slider styled to match the in-game score bar (cyan frame + navy→white gradient fill). */
+const PolarSlider = ({
+  value,
+  onChange,
+  min = 0,
+  max = 1,
+  step = 0.01,
+  ariaLabel,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  ariaLabel: string;
+}) => {
+  const pct = ((value - min) / (max - min)) * 100;
+  return (
+    <div className="relative h-3 min-w-0 flex-1">
+      <div
+        className="absolute inset-0 overflow-hidden rounded-none border border-solid bg-white/[0.04] ring-1 ring-inset ring-white/[0.05] backdrop-blur-[4px]"
+        style={{
+          borderColor: POLAR_HUD.barBorder,
+          boxShadow: `inset 0 0 20px ${POLAR_HUD.barInset}`,
+        }}
+      >
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(255,255,255,0.5) 2px, rgba(255,255,255,0.5) 3px)",
+          }}
+          aria-hidden
+        />
+        <div
+          className="absolute inset-y-0 left-0 overflow-hidden transition-[width] duration-150 ease-out"
+          style={{ width: `${pct}%` }}
+        >
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(to right, #1e293b 0%, #2d3f56 8%, #3e5570 18%, #5a7a96 30%, #7da3bf 44%, #a5cfe4 58%, #c8e6f5 72%, #e0f2fe 84%, #f0f9ff 93%, #ffffff 100%)",
+            }}
+          />
+          <div
+            className="absolute inset-x-0 top-0 h-[40%] opacity-30"
+            style={{
+              background: "linear-gradient(to bottom, rgba(255,255,255,0.15), transparent)",
+            }}
+            aria-hidden
+          />
+          <div
+            className="absolute inset-y-0 right-0 w-3"
+            style={{
+              background:
+                "linear-gradient(to left, rgba(186,230,253,0.6), rgba(186,230,253,0.15) 40%, transparent)",
+            }}
+            aria-hidden
+          />
+        </div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        aria-label={ariaLabel}
+      />
+    </div>
+  );
+};
+
 export const GameScreen = ({
     room,
     players, 
@@ -153,6 +230,8 @@ export const GameScreen = ({
     isSoloMode,
     isDevMode,
     countdown,
+    bgMusicVolume,
+    onBgMusicVolumeChange,
     onGameAbandoned,
     showResults,
 
@@ -371,6 +450,62 @@ export const GameScreen = ({
               >
                 Settings
               </p>
+              {bgMusicVolume !== undefined && onBgMusicVolumeChange && (
+                <div className="w-full min-w-0">
+                  <p className="mb-1.5 font-montreal text-[9px] uppercase tracking-[0.12em] text-slate-500">
+                    Music
+                  </p>
+                  <div className="flex w-full min-w-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onBgMusicVolumeChange(bgMusicVolume > 0 ? 0 : 0.3)}
+                      className="shrink-0 text-slate-300 transition-colors hover:text-white"
+                      aria-label={bgMusicVolume > 0 ? "Mute music" : "Unmute music"}
+                    >
+                      {bgMusicVolume > 0 ? (
+                        <Volume2 className="size-4" aria-hidden />
+                      ) : (
+                        <VolumeX className="size-4" aria-hidden />
+                      )}
+                    </button>
+                    <PolarSlider
+                      value={bgMusicVolume}
+                      onChange={onBgMusicVolumeChange}
+                      ariaLabel="Music volume"
+                    />
+                    <span className="w-8 shrink-0 text-right font-mono text-xs tabular-nums text-slate-500">
+                      {Math.round(bgMusicVolume * 100)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div className="w-full min-w-0">
+                <p className="mb-1.5 font-montreal text-[9px] uppercase tracking-[0.12em] text-slate-500">
+                  SFX
+                </p>
+                <div className="flex w-full min-w-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSfxVolume(sfxVolume > 0 ? 0 : 0.5)}
+                    className="shrink-0 text-slate-300 transition-colors hover:text-white"
+                    aria-label={sfxVolume > 0 ? "Mute sound effects" : "Unmute sound effects"}
+                  >
+                    {sfxVolume > 0 ? (
+                      <Volume2 className="size-4" aria-hidden />
+                    ) : (
+                      <VolumeX className="size-4" aria-hidden />
+                    )}
+                  </button>
+                  <PolarSlider
+                    value={sfxVolume}
+                    onChange={setSfxVolume}
+                    ariaLabel="SFX volume"
+                  />
+                  <span className="w-8 shrink-0 text-right font-mono text-xs tabular-nums text-slate-500">
+                    {Math.round(sfxVolume * 100)}
+                  </span>
+                </div>
+              </div>
               {room?.roomId && (
                 <div className="border-t border-white/10 pt-3">
                   <p className="font-montreal text-[10px] uppercase tracking-[0.12em] text-slate-500">
