@@ -1,6 +1,8 @@
 import { useRef, useCallback, useState } from "react";
 
-const SOUNDS = ["collect", "unlock", "lightSwitch", "progress", "plate"] as const; 
+const SOUNDS = ["collect", "unlock", "lightSwitch", "progress", "plate", "spray",
+    "error", "key"
+] as const; 
 type SoundName = (typeof SOUNDS)[number];
 
 export const useSounds = () => {
@@ -12,9 +14,12 @@ export const useSounds = () => {
         audioRef.current = {
             collect: new Audio("/sounds/collectables.mp3"),
             unlock: new Audio("/sounds/door-unlocked.mp3"),
-            lightSwitch: new Audio("/sounds/light-switch.mp3"),
+            lightSwitch: new Audio("/sounds/light-switch.wav"),
             progress: new Audio("/sounds/next-level.mp3"),
             plate: new Audio("/sounds/plate-click.mp3"),
+            spray: new Audio("/sounds/spraycan.wav"),
+            error: new Audio("/sounds/error-buzz.wav"),
+            key: new Audio("/sounds/gold.mp3")
         };
 
         for (const sound of Object.values(audioRef.current)) {

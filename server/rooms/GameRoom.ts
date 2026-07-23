@@ -663,7 +663,7 @@ export class GameRoom extends Room<GameState> {
 
         // pick one obstacle type randomly from the pool each level
         // add more strings here later when new obstacle types are built
-        const OBSTACLE_POOL = ["pressurePlates", "keys", "levers"];
+        const OBSTACLE_POOL =["keys"];// ["pressurePlates", "keys", "levers"];
         this.state.obstacleType = OBSTACLE_POOL[Math.floor(Math.random() * OBSTACLE_POOL.length)];
         console.log("obstacleType set to:", this.state.obstacleType);
 
