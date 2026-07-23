@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import { useTexture } from "@react-three/drei";
 import type * as Client from "colyseus.js";
 import * as THREE from "three";
 import { MazeCollectibles } from "./MazeCollectibles";
-import { ExitBarrier, MazePlayerAvatar, MazeWallPiece } from "./MazeModels";
+import { ExitBarrier, FlashlightProp, MazePlayerAvatar, MazeWallPiece, USE_CUSTOM_WALL_MODELS } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
 import { Keys } from "./Keys";
@@ -17,6 +18,18 @@ const ALL_WALLS = WALL_NORTH | WALL_EAST | WALL_SOUTH | WALL_WEST;
 const CELL_SIZE = 1.8;
 const WALL_THICKNESS = 0.18;
 const WALL_HEIGHT = 1.35;
+const FLOOR_TEXTURE_URL = (import.meta.env.VITE_MAZE_FLOOR_TEXTURE_URL || "").trim();
+const SKY_TEXTURE_URL = (import.meta.env.VITE_MAZE_SKY_TEXTURE_URL || "").trim();
+const FLOOR_TEXTURE_REPEAT_UNITS = Number(import.meta.env.VITE_MAZE_FLOOR_TEXTURE_REPEAT_UNITS || CELL_SIZE) || CELL_SIZE;
+const envDegreesToRadians = (value: string | undefined, fallback: number) => {
+  const parsed = Number(value);
+  return THREE.MathUtils.degToRad(Number.isFinite(parsed) ? parsed : fallback);
+};
+const SKY_ROTATION: [number, number, number] = [
+  envDegreesToRadians(import.meta.env.VITE_MAZE_SKY_ROTATION_X_DEG, 90),
+  envDegreesToRadians(import.meta.env.VITE_MAZE_SKY_ROTATION_Y_DEG, 0),
+  envDegreesToRadians(import.meta.env.VITE_MAZE_SKY_ROTATION_Z_DEG, 0),
+];
 const CAMERA_DISTANCE = 16;
 const CAMERA_MIN_DISTANCE = 10;
 const CAMERA_MAX_DISTANCE = 30;
@@ -49,6 +62,12 @@ const FP_FOV = 70;
 const OVERHEAD_FOV = 46;
 const FP_MOUSE_SENSITIVITY = 0.0032; // radians per pixel of mouse movement
 const FP_PITCH_LIMIT = 0.6; // how far you can look up/down (radians)
+const FLASHLIGHT_COLOR = "#ffd48a";
+const FLASHLIGHT_POSITION: [number, number, number] = [0.34, 0.34, 0.3];
+const FLASHLIGHT_BEAM_DISTANCE = 11;
+const FLASHLIGHT_BEAM_INTENSITY = 13;
+const FLASHLIGHT_LOCAL_GLOW_INTENSITY = 0.06;
+const FLASHLIGHT_LOCAL_GLOW_DISTANCE = 0.85;
 
 // Quadrant wall colors - each quarter of the maze glows a different hue for orientation
 // [surface color, emissive glow] pairs; index 0 keeps the original blue
@@ -69,6 +88,7 @@ const GRAFFITI_ERASER_PX = 44; // medium eraser circle - clears fast without wip
 const GRAFFITI_MIN_POINT_DISTANCE = 0.015; // min uv movement before recording another point
 const GRAFFITI_MAX_POINTS = 64; // per stroke; longer drags auto-split into new strokes
 const GRAFFITI_PENDING_MS = 1500; // keep your just-sent stroke visible until the server echoes it
+const GRAFFITI_OPACITY = 0.72;
 
 const CONTROL_CODES = {
   up: ["KeyW", "ArrowUp"],
@@ -152,6 +172,7 @@ interface WallSegment {
 }
 
 const PLAYER_COLORS = ["#38f8b6", "#ff5a7a", "#facc15", "#a78bfa", "#fb923c", "#67e8f9"];
+const GRAFFITI_COLORS = ["#1f9f79", "#b23a55", "#b88a18", "#7864c8", "#b8642c", "#319aa8"];
 
 function mazeIndex(width: number, x: number, y: number) {
   return y * width + x;
@@ -354,11 +375,77 @@ function GraffitiWall({
           rotation={[0, face.side === 1 ? 0 : Math.PI, 0]}
         >
           <planeGeometry args={[faceLength, faceHeight]} />
-          <meshBasicMaterial map={face.texture} transparent depthWrite={false} />
+          <meshBasicMaterial map={face.texture} transparent opacity={GRAFFITI_OPACITY} depthWrite={false} />
         </mesh>
       ))}
     </group>
   );
+}
+
+function TexturedMazeFloor({ width, depth }: { width: number; depth: number }) {
+  const texture = useTexture(FLOOR_TEXTURE_URL);
+  const { gl } = useThree();
+
+  useEffect(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(
+      Math.max(1, width / FLOOR_TEXTURE_REPEAT_UNITS),
+      Math.max(1, depth / FLOOR_TEXTURE_REPEAT_UNITS),
+    );
+    texture.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
+    texture.needsUpdate = true;
+  }, [depth, gl, texture, width]);
+
+  return (
+    <mesh receiveShadow position={[0, -0.08, 0]}>
+      <boxGeometry args={[width, 0.12, depth]} />
+      <meshStandardMaterial map={texture} roughness={0.88} metalness={0.03} />
+    </mesh>
+  );
+}
+
+function MazeFloor({ width, depth }: { width: number; depth: number }) {
+  if (FLOOR_TEXTURE_URL) {
+    return <TexturedMazeFloor width={width} depth={depth} />;
+  }
+
+  return (
+    <mesh receiveShadow position={[0, -0.08, 0]}>
+      <boxGeometry args={[width, 0.12, depth]} />
+      <meshStandardMaterial color="#111827" roughness={0.92} metalness={0.02} />
+    </mesh>
+  );
+}
+
+function TexturedSkySphere({ radius }: { radius: number }) {
+  const texture = useTexture(SKY_TEXTURE_URL);
+
+  useEffect(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.needsUpdate = true;
+  }, [texture]);
+
+  return (
+    <mesh frustumCulled={false} renderOrder={-1000} rotation={SKY_ROTATION}>
+      <sphereGeometry args={[radius, 64, 32]} />
+      <meshBasicMaterial
+        map={texture}
+        side={THREE.BackSide}
+        fog={false}
+        depthWrite={false}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+}
+
+function MazeSky({ radius }: { radius: number }) {
+  if (!SKY_TEXTURE_URL) return null;
+  return <TexturedSkySphere radius={radius} />;
 }
 
 // Small white aiming dot shown only in first person, so you can see where the
@@ -386,6 +473,54 @@ function FpCrosshair({ firstPersonRef }: { firstPersonRef: MutableRefObject<bool
   );
 }
 
+function PlayerFlashlight({
+  isMe,
+  firstPersonRef,
+  fpPitchRef,
+}: {
+  isMe: boolean;
+  firstPersonRef?: MutableRefObject<boolean>;
+  fpPitchRef?: MutableRefObject<number>;
+}) {
+  const aimRef = useRef<THREE.Group>(null);
+  const target = useMemo(() => new THREE.Object3D(), []);
+
+  useFrame((_state, delta) => {
+    const aim = aimRef.current;
+    if (!aim) return;
+
+    const targetPitch = isMe && firstPersonRef?.current ? -(fpPitchRef?.current ?? 0) : -0.06;
+    aim.rotation.x = THREE.MathUtils.damp(aim.rotation.x, targetPitch, 18, delta);
+  });
+
+  return (
+    <group position={FLASHLIGHT_POSITION}>
+      <group ref={aimRef}>
+        <FlashlightProp />
+        <spotLight
+          position={[0, 0, 0.12]}
+          target={target}
+          color={FLASHLIGHT_COLOR}
+          intensity={FLASHLIGHT_BEAM_INTENSITY}
+          distance={FLASHLIGHT_BEAM_DISTANCE}
+          angle={0.36}
+          penumbra={0.58}
+          decay={1.55}
+          castShadow
+        />
+        <pointLight
+          position={[0, 0, 0.16]}
+          color={FLASHLIGHT_COLOR}
+          intensity={FLASHLIGHT_LOCAL_GLOW_INTENSITY}
+          distance={FLASHLIGHT_LOCAL_GLOW_DISTANCE}
+          decay={2}
+        />
+        <primitive object={target} position={[0, 0, FLASHLIGHT_BEAM_DISTANCE]} />
+      </group>
+    </group>
+  );
+}
+
 function PlayerToken({
   player,
   index,
@@ -394,6 +529,8 @@ function PlayerToken({
   gridHeight,
   localPositionRef,
   firstPersonRef,
+  fpYawRef,
+  fpPitchRef,
 }: {
   player: MazePlayer;
   index: number;
@@ -402,8 +539,11 @@ function PlayerToken({
   gridHeight: number;
   localPositionRef?: MutableRefObject<LocalPosition>;
   firstPersonRef?: MutableRefObject<boolean>;
+  fpYawRef?: MutableRefObject<number>;
+  fpPitchRef?: MutableRefObject<number>;
 }) {
   const groupRef = useRef<THREE.Group>(null);
+  const avatarRef = useRef<THREE.Group>(null);
   const desiredPosition = useRef(new THREE.Vector3());
   const color = PLAYER_COLORS[index % PLAYER_COLORS.length];
 
@@ -430,8 +570,11 @@ function PlayerToken({
     const visualTarget = getVisualTarget();
     desiredPosition.current.set(visualTarget.x, visualTarget.y, visualTarget.z);
 
-    // Hide your own avatar in first person so the camera isn't inside the model
-    groupRef.current.visible = !(isMe && firstPersonRef?.current);
+    // Hide your own avatar in first person so the camera isn't inside the model,
+    // but keep the flashlight/light rig active.
+    if (avatarRef.current) {
+      avatarRef.current.visible = !(isMe && firstPersonRef?.current);
+    }
 
     const moveX = visualTarget.x - groupRef.current.position.x;
     const moveZ = visualTarget.z - groupRef.current.position.z;
@@ -460,7 +603,9 @@ function PlayerToken({
       );
     }
 
-    if (moving) {
+    if (isMe && firstPersonRef?.current && fpYawRef) {
+      groupRef.current.rotation.y = fpYawRef.current;
+    } else if (moving) {
       const targetYaw = Math.atan2(moveX, moveZ);
       let deltaYaw = targetYaw - groupRef.current.rotation.y;
       while (deltaYaw > Math.PI) deltaYaw -= Math.PI * 2;
@@ -471,7 +616,10 @@ function PlayerToken({
 
   return (
     <group ref={groupRef} position={[target.x, target.y, target.z]}>
-      <MazePlayerAvatar color={color} isMe={isMe} />
+      <group ref={avatarRef}>
+        <MazePlayerAvatar color={color} isMe={isMe} />
+      </group>
+      <PlayerFlashlight isMe={isMe} firstPersonRef={firstPersonRef} fpPitchRef={fpPitchRef} />
     </group>
   );
 }
@@ -610,6 +758,7 @@ export function MazeBoard({
     if (!hasMaze) return [];
 
     const segments: WallSegment[] = [];
+    const wallLength = USE_CUSTOM_WALL_MODELS ? CELL_SIZE : CELL_SIZE + WALL_THICKNESS;
 
     for (let y = 0; y < gridHeight; y++) {
       for (let x = 0; x < gridWidth; x++) {
@@ -620,7 +769,7 @@ export function MazeBoard({
           segments.push({
             key: `${x}-${y}-n`,
             position: [worldX, WALL_HEIGHT / 2, worldZ - CELL_SIZE / 2],
-            size: [CELL_SIZE + WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS],
+            size: [wallLength, WALL_HEIGHT, WALL_THICKNESS],
           });
         }
 
@@ -628,7 +777,7 @@ export function MazeBoard({
           segments.push({
             key: `${x}-${y}-w`,
             position: [worldX - CELL_SIZE / 2, WALL_HEIGHT / 2, worldZ],
-            size: [WALL_THICKNESS, WALL_HEIGHT, CELL_SIZE + WALL_THICKNESS],
+            size: [WALL_THICKNESS, WALL_HEIGHT, wallLength],
           });
         }
 
@@ -636,7 +785,7 @@ export function MazeBoard({
           segments.push({
             key: `${x}-${y}-e`,
             position: [worldX + CELL_SIZE / 2, WALL_HEIGHT / 2, worldZ],
-            size: [WALL_THICKNESS, WALL_HEIGHT, CELL_SIZE + WALL_THICKNESS],
+            size: [WALL_THICKNESS, WALL_HEIGHT, wallLength],
           });
         }
 
@@ -644,7 +793,7 @@ export function MazeBoard({
           segments.push({
             key: `${x}-${y}-s`,
             position: [worldX, WALL_HEIGHT / 2, worldZ + CELL_SIZE / 2],
-            size: [CELL_SIZE + WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS],
+            size: [wallLength, WALL_HEIGHT, WALL_THICKNESS],
           });
         }
       }
@@ -664,7 +813,7 @@ export function MazeBoard({
     // each player's color is their own permanent slot, not their position in a live sorted
     // list — so one player leaving can never reassign another player's color
     const colorBySession = new Map(
-      Array.from(players.values()).map((p) => [p.sessionId, PLAYER_COLORS[p.slot % PLAYER_COLORS.length]]),
+      Array.from(players.values()).map((p) => [p.sessionId, GRAFFITI_COLORS[p.slot % GRAFFITI_COLORS.length]]),
     );
     return (sessionId: string) => colorBySession.get(sessionId) ?? GRAFFITI_FALLBACK_COLOR;
   }, [players]);
@@ -1191,19 +1340,23 @@ export function MazeBoard({
         fpPitchRef={fpPitchRef}
       />
       <FpCrosshair firstPersonRef={firstPersonRef} />
+      <MazeSky radius={Math.max(60, gridSpan * 2.6)} />
       <fog attach="fog" args={["#030712", 20, 62]} />
 
-      <ambientLight intensity={0.72} />
-      <directionalLight position={[8, 14, 10]} intensity={2.1} castShadow />
+      <hemisphereLight args={["#6d94de", "#01030a", 0.13]} />
+      <ambientLight color="#496aa8" intensity={0.035} />
+      <directionalLight
+        position={[-8, 12, -10]}
+        color="#6f96dc"
+        intensity={0.12}
+        castShadow
+      />
       {exitUnlocked && (
         <pointLight position={[exitWorldX, 2.4, exitWorldZ]} color="#facc15" intensity={2.2 + playersAtExit * 1.5} distance={8 + playersAtExit * 2} />
       )}
 
       <group>
-        <mesh receiveShadow position={[0, -0.08, 0]}>
-          <boxGeometry args={[boardWidth + WALL_THICKNESS, 0.12, boardDepth + WALL_THICKNESS]} />
-          <meshStandardMaterial color="#111827" roughness={0.92} metalness={0.02} />
-        </mesh>
+        <MazeFloor width={boardWidth + WALL_THICKNESS} depth={boardDepth + WALL_THICKNESS} />
 
         <gridHelper args={[gridSpan, Math.max(gridWidth, gridHeight), "#1f9af0", "#172033"]} position={[0, 0.02, 0]} />
 
@@ -1242,7 +1395,7 @@ export function MazeBoard({
           // colors meet, their coplanar faces z-fight. A tiny per-quadrant thickness
           // difference (up to ~12mm in game units) separates the faces invisibly.
           const alongX = wall.size[0] > wall.size[2];
-          const thickness = (alongX ? wall.size[2] : wall.size[0]) + quadrant * 0.004;
+          const thickness = (alongX ? wall.size[2] : wall.size[0]) + (USE_CUSTOM_WALL_MODELS ? 0 : quadrant * 0.004);
           const adjustedSize: [number, number, number] = alongX
             ? [wall.size[0], wall.size[1], thickness]
             : [thickness, wall.size[1], wall.size[2]];
@@ -1251,6 +1404,7 @@ export function MazeBoard({
               key={wall.key}
               position={wall.position}
               size={adjustedSize}
+              wallVariant={quadrant}
               color={wallColor}
               emissive={wallEmissive}
             />
@@ -1289,6 +1443,8 @@ export function MazeBoard({
             gridHeight={gridHeight}
             localPositionRef={sessionId === currentSessionId ? localPositionRef : undefined}
             firstPersonRef={firstPersonRef}
+            fpYawRef={sessionId === currentSessionId ? fpYawRef : undefined}
+            fpPitchRef={sessionId === currentSessionId ? fpPitchRef : undefined}
           />
         ))}
 

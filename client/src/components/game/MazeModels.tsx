@@ -3,7 +3,15 @@ import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
 const WALL_MODEL_URL = (import.meta.env.VITE_MAZE_WALL_MODEL_URL || "").trim();
+const WALL_MODEL_URLS = [
+  (import.meta.env.VITE_MAZE_WALL_MODEL_URL_1 || WALL_MODEL_URL).trim(),
+  (import.meta.env.VITE_MAZE_WALL_MODEL_URL_2 || WALL_MODEL_URL).trim(),
+  (import.meta.env.VITE_MAZE_WALL_MODEL_URL_3 || WALL_MODEL_URL).trim(),
+  (import.meta.env.VITE_MAZE_WALL_MODEL_URL_4 || WALL_MODEL_URL).trim(),
+];
+export const USE_CUSTOM_WALL_MODELS = WALL_MODEL_URLS.some(Boolean);
 const PLAYER_MODEL_URL = (import.meta.env.VITE_MAZE_PLAYER_MODEL_URL || "").trim();
+const FLASHLIGHT_MODEL_URL = (import.meta.env.VITE_MAZE_FLASHLIGHT_MODEL_URL || "").trim();
 const EXIT_BARRIER_MODEL_URL = (import.meta.env.VITE_EXIT_BARRIER_MODEL_URL || "").trim();
 
 // visual size only — the server's collision radius (PLAYER_RADIUS) is unaffected, so this
@@ -41,16 +49,27 @@ export function GltfModel({
 export function MazeWallPiece({
   position,
   size,
+  wallVariant = 0,
   color = "#7dd3fc",
   emissive = "#0ea5e9",
 }: {
   position: Vec3;
   size: Vec3;
+  wallVariant?: number;
   color?: string;
   emissive?: string;
 }) {
-  if (WALL_MODEL_URL) {
-    return <GltfModel url={WALL_MODEL_URL} position={position} scale={size} />;
+  const wallModelUrl = WALL_MODEL_URLS[wallVariant] || WALL_MODEL_URL;
+
+  if (wallModelUrl) {
+    const alongX = size[0] >= size[2];
+    return (
+      <GltfModel
+        url={wallModelUrl}
+        position={position}
+        rotation={[0, alongX ? 0 : Math.PI / 2, 0]}
+      />
+    );
   }
 
   return (
@@ -101,6 +120,35 @@ export function MazePlayerAvatar({
       <mesh position={[0, 0.74, 0.3]} castShadow>
         <boxGeometry args={[0.36, 0.18, 0.07]} />
         <meshStandardMaterial color="#dff9ff" emissive="#7dd3fc" emissiveIntensity={0.18} roughness={0.25} />
+      </mesh>
+    </group>
+  );
+}
+
+export function FlashlightProp() {
+  if (FLASHLIGHT_MODEL_URL) {
+    return <GltfModel url={FLASHLIGHT_MODEL_URL} />;
+  }
+
+  return (
+    <group>
+      <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
+        <cylinderGeometry args={[0.045, 0.065, 0.34, 18]} />
+        <meshStandardMaterial color="#1b2130" roughness={0.48} metalness={0.55} />
+      </mesh>
+      <mesh position={[0, 0, 0.19]} castShadow>
+        <cylinderGeometry args={[0.075, 0.075, 0.045, 18]} />
+        <meshStandardMaterial
+          color="#2a3144"
+          emissive="#ffd48a"
+          emissiveIntensity={0.18}
+          roughness={0.35}
+          metalness={0.42}
+        />
+      </mesh>
+      <mesh position={[0, 0, 0.218]}>
+        <circleGeometry args={[0.055, 18]} />
+        <meshBasicMaterial color="#ffd48a" transparent opacity={0.72} side={THREE.DoubleSide} />
       </mesh>
     </group>
   );
