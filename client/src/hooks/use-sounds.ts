@@ -12,7 +12,7 @@ export const useSounds = () => {
 
     if (!audioRef.current) {
         audioRef.current = {
-            collect: new Audio("/sounds/collectables.mp3"),
+            collect: new Audio("/sounds/activate.mp3"),
             unlock: new Audio("/sounds/door-unlocked.mp3"),
             lightSwitch: new Audio("/sounds/light-switch.wav"),
             progress: new Audio("/sounds/next-level.mp3"),
