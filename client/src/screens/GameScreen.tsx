@@ -3,7 +3,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import * as Client from "colyseus.js";
 import { Component, useRef, useEffect, useState, type MutableRefObject } from "react";
 import type { ErrorInfo, ReactNode } from "react";
-import { Info, Settings, X } from "lucide-react";
+import { Info, Settings, X, Volume2, VolumeX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GameControls } from "@/components/game/GameControls";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
@@ -11,8 +11,8 @@ import { NoiseFieldOverlay, type NoiseFieldHandle } from "@/components/game/Nois
 import { StageAnnouncement } from "@/components/game/StageAnnouncement";
 import { DevStageControls } from "@/components/game/DevStageControls";
 import { MazeBoard } from "@/components/game/MazeBoard";
-import { Compass } from "@/components/game/Compass";
 import { LeverPrompt } from "@/components/game/LeverPrompt";
+import { useSounds } from "@/hooks/use-sounds";
 
 // Error boundary to catch silent Canvas/Three.js crashes
 class CanvasErrorBoundary extends Component<
@@ -68,6 +68,9 @@ const DeferredEffects = () => {
   );
 };
 
+// Must stay in sync with PLAYER_COLORS in MazeBoard.tsx - both index by player.slot
+const TEAM_COLORS = ["#38f8b6", "#ff5a7a", "#facc15", "#a78bfa", "#fb923c", "#67e8f9"];
+
 interface PlayerState {
     x: number;
     y: number;
@@ -102,10 +105,11 @@ interface GameScreenProps {
     isSoloMode: boolean;
     isDevMode: boolean;
     countdown?: number;
+    bgMusicVolume?: number;
+    onBgMusicVolumeChange?:  (volume: number) => void;
     onGameAbandoned?: ()=> void;
     showResults?: boolean; // post-game results overlay is showing — freezes movement/interaction
 
-    
     pressurePlatesRequired: number;
     plate0X: number;
     plate0Y: number;
@@ -131,7 +135,84 @@ interface GameScreenProps {
     leverCellX: number[];
     leverCellY: number[];
     leverWallDir: number[];
+    onLeverPulled?: () => void;
 }
+
+/** Horizontal slider styled to match the in-game score bar (cyan frame + navy→white gradient fill). */
+const PolarSlider = ({
+  value,
+  onChange,
+  min = 0,
+  max = 1,
+  step = 0.01,
+  ariaLabel,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  ariaLabel: string;
+}) => {
+  const pct = ((value - min) / (max - min)) * 100;
+  return (
+    <div className="relative h-3 min-w-0 flex-1">
+      <div
+        className="absolute inset-0 overflow-hidden rounded-none border border-solid bg-white/[0.04] ring-1 ring-inset ring-white/[0.05] backdrop-blur-[4px]"
+        style={{
+          borderColor: POLAR_HUD.barBorder,
+          boxShadow: `inset 0 0 20px ${POLAR_HUD.barInset}`,
+        }}
+      >
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(255,255,255,0.5) 2px, rgba(255,255,255,0.5) 3px)",
+          }}
+          aria-hidden
+        />
+        <div
+          className="absolute inset-y-0 left-0 overflow-hidden transition-[width] duration-150 ease-out"
+          style={{ width: `${pct}%` }}
+        >
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(to right, #1e293b 0%, #2d3f56 8%, #3e5570 18%, #5a7a96 30%, #7da3bf 44%, #a5cfe4 58%, #c8e6f5 72%, #e0f2fe 84%, #f0f9ff 93%, #ffffff 100%)",
+            }}
+          />
+          <div
+            className="absolute inset-x-0 top-0 h-[40%] opacity-30"
+            style={{
+              background: "linear-gradient(to bottom, rgba(255,255,255,0.15), transparent)",
+            }}
+            aria-hidden
+          />
+          <div
+            className="absolute inset-y-0 right-0 w-3"
+            style={{
+              background:
+                "linear-gradient(to left, rgba(186,230,253,0.6), rgba(186,230,253,0.15) 40%, transparent)",
+            }}
+            aria-hidden
+          />
+        </div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        aria-label={ariaLabel}
+      />
+    </div>
+  );
+};
 
 export const GameScreen = ({
     room,
@@ -152,6 +233,8 @@ export const GameScreen = ({
     isSoloMode,
     isDevMode,
     countdown,
+    bgMusicVolume,
+    onBgMusicVolumeChange,
     onGameAbandoned,
     showResults,
 
@@ -199,6 +282,10 @@ export const GameScreen = ({
     const settingsCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const SETTINGS_CLOSE_MS = 300; 
 
+    
+    const { play: playSound, sfxVolume, setSfxVolume } = useSounds(); 
+    const prevExitUnlocked = useRef(exitUnlocked);
+    const prevStage = useRef(stage);
 
     // Dev: client-side stage override for effects testing (does NOT affect game)
     const [fakeStage, setFakeStage] = useState<number | null>(null);
@@ -224,6 +311,20 @@ export const GameScreen = ({
         }, SETTINGS_CLOSE_MS);
     };
     
+    // exit unlocked
+    useEffect(() => {
+      if (exitUnlocked && !prevExitUnlocked.current) {
+        playSound("unlock");
+      }
+      prevExitUnlocked.current = exitUnlocked;
+    }, [exitUnlocked]);
+
+    useEffect(() => {
+      if (stage >prevStage.current) {
+        playSound("progress");
+      }
+    }, [stage]);
+
   return (
     <div className="isolate w-full h-screen relative overflow-hidden bg-canvas">
       <div
@@ -352,6 +453,62 @@ export const GameScreen = ({
               >
                 Settings
               </p>
+              {bgMusicVolume !== undefined && onBgMusicVolumeChange && (
+                <div className="w-full min-w-0">
+                  <p className="mb-1.5 font-montreal text-[9px] uppercase tracking-[0.12em] text-slate-500">
+                    Music
+                  </p>
+                  <div className="flex w-full min-w-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onBgMusicVolumeChange(bgMusicVolume > 0 ? 0 : 0.3)}
+                      className="shrink-0 text-slate-300 transition-colors hover:text-white"
+                      aria-label={bgMusicVolume > 0 ? "Mute music" : "Unmute music"}
+                    >
+                      {bgMusicVolume > 0 ? (
+                        <Volume2 className="size-4" aria-hidden />
+                      ) : (
+                        <VolumeX className="size-4" aria-hidden />
+                      )}
+                    </button>
+                    <PolarSlider
+                      value={bgMusicVolume}
+                      onChange={onBgMusicVolumeChange}
+                      ariaLabel="Music volume"
+                    />
+                    <span className="w-8 shrink-0 text-right font-mono text-xs tabular-nums text-slate-500">
+                      {Math.round(bgMusicVolume * 100)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div className="w-full min-w-0">
+                <p className="mb-1.5 font-montreal text-[9px] uppercase tracking-[0.12em] text-slate-500">
+                  SFX
+                </p>
+                <div className="flex w-full min-w-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSfxVolume(sfxVolume > 0 ? 0 : 0.5)}
+                    className="shrink-0 text-slate-300 transition-colors hover:text-white"
+                    aria-label={sfxVolume > 0 ? "Mute sound effects" : "Unmute sound effects"}
+                  >
+                    {sfxVolume > 0 ? (
+                      <Volume2 className="size-4" aria-hidden />
+                    ) : (
+                      <VolumeX className="size-4" aria-hidden />
+                    )}
+                  </button>
+                  <PolarSlider
+                    value={sfxVolume}
+                    onChange={setSfxVolume}
+                    ariaLabel="SFX volume"
+                  />
+                  <span className="w-8 shrink-0 text-right font-mono text-xs tabular-nums text-slate-500">
+                    {Math.round(sfxVolume * 100)}
+                  </span>
+                </div>
+              </div>
               {room?.roomId && (
                 <div className="border-t border-white/10 pt-3">
                   <p className="font-montreal text-[10px] uppercase tracking-[0.12em] text-slate-500">
@@ -516,6 +673,50 @@ export const GameScreen = ({
         </div>
       </div>
 
+      {/* Team roster - who's playing and which color they are (colors come from
+          player.slot, so they stay put when someone joins or leaves) */}
+      {players.size > 0 && (
+        <div className="absolute right-4 top-24 z-10">
+          <div
+            className="relative min-w-[7.25rem] rounded-none border border-solid bg-canvas/50 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-inset ring-white/[0.06] backdrop-blur-[4px]"
+            style={{ borderColor: POLAR_HUD.border }}
+            data-ui="game-team-chip"
+          >
+            <HudCornerLs />
+            <div className="relative z-[1]">
+              <p className="font-montreal text-[9px] uppercase leading-tight tracking-[0.12em] text-slate-300">
+                Team
+              </p>
+              <ul className="mt-1.5 space-y-1.5">
+                {Array.from(players.values())
+                  .sort((a, b) => a.slot - b.slot)
+                  .map((player) => {
+                    const isMe = player.sessionId === room?.sessionId;
+                    const color = TEAM_COLORS[player.slot % TEAM_COLORS.length];
+                    return (
+                      <li key={player.sessionId} className="flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }}
+                          aria-hidden
+                        />
+                        <span
+                          className={`font-montreal text-[11px] leading-none ${
+                            isMe ? "font-bold text-white" : "text-slate-300"
+                          }`}
+                        >
+                          {player.name}
+                          {isMe && <span className="ml-1 text-slate-500">(you)</span>}
+                        </span>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Exit waiting indicator — only shows when exit is unlocked and someone is there */}
       {exitUnlocked && playersAtExit > 0 && (
         <div className="absolute bottom-28 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-none border border-yellow-400/40 bg-canvas/70 px-4 py-2 text-center backdrop-blur-sm">
@@ -568,8 +769,9 @@ export const GameScreen = ({
         style={{ background: "#000000" }}
         shadows
         camera={{ position: [0, 12, 12], fov: 46, near: 0.1, far: 120 }}
+        dpr={[1, 1.5]} // cap resolution on high-DPI screens - big GPU savings, barely visible
         gl={{
-          powerPreference: "default",
+          powerPreference: "high-performance",
           failIfMajorPerformanceCaveat: false,
         }}
         onCreated={({ gl }) => {
@@ -585,6 +787,7 @@ export const GameScreen = ({
       >
 
         <MazeBoard
+          viewToggleEnabled={isDevMode}
           gridWidth={gridWidth}
           gridHeight={gridHeight}
           mazeWalls={mazeWalls}
@@ -622,6 +825,7 @@ export const GameScreen = ({
           leverCellX={leverCellX}
           leverCellY={leverCellY}
           leverWallDir={leverWallDir}
+          onLeverPulled={() => playSound("lightSwitch")}
           compassYawRef={compassYawRef}
           leverInRangeRef={leverInRangeRef}
           disabled={showResults}

@@ -40,19 +40,20 @@ function Key({
         boxRef.current.rotation.y += deltaTime * 1.5;
     });
 
-    if (isCollected) return null;
-
     return (
         <group ref={boxRef} position={[worldX, 0.5, worldZ]}>
-            <mesh>
-                <sphereGeometry args={[0.4]} /> 
+            {/* hides the visual only — the group and light stay mounted below, so collecting
+                a key never removes a light from the scene (which would force a shader
+                recompile for every other lit material and show up as a stutter) */}
+            <mesh visible={!isCollected}>
+                <sphereGeometry args={[0.4]} />
                 <meshBasicMaterial color={color}/>
             </mesh>
 
-            <pointLight 
-                position={[0, 0.3, 0]} 
-                color={color} 
-                intensity={2.0} 
+            <pointLight
+                position={[0, 0.3, 0]}
+                color={color}
+                intensity={isCollected ? 0 : 2.0}
                 distance={2.5}
             />
         </group>
@@ -71,6 +72,7 @@ export function Keys({
     keysRequired,
     keysCollectedMask,
     onKeyCollected,
+    onCollection,
 } : {
     keys: KeyPos[]
     gridWidth: number;
@@ -80,6 +82,7 @@ export function Keys({
     keysRequired: number;
     keysCollectedMask: number;
     onKeyCollected?: (index: number) => void
+    onCollection: () => void;
 }) {
     if (keysRequired === 0) return null;
 
@@ -103,6 +106,7 @@ export function Keys({
             const dist = Math.hypot(localPlayer.x - key.gridX, localPlayer.y - key.gridY);
             if (dist < KEY_DETECT_RADIUS) {
                 onKeyCollected?.(index);
+                onCollection();
             }
         });
     });

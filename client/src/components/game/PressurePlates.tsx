@@ -28,20 +28,30 @@ function Plate({
     worldZ,
     color,
     isActive, // true when the assigned player is standing on this plate
+    onActivated,
 }: {
     worldX: number;
     worldZ: number;
     color: string;
     isActive: boolean;
+    onActivated: () => void;
 }) {
     // refs let us poke the material directly every frame instead of going through React
     const discRef = useRef<THREE.MeshBasicMaterial | null>(null);
     const ringRef = useRef<THREE.MeshBasicMaterial | null>(null);
     const timeRef = useRef(0);
+    const prevIsActive = useRef(false);
 
     // breathing glow when active, dim when waiting
     useFrame((_, delta) => {
         timeRef.current += delta;
+
+        if (isActive && !prevIsActive.current) {
+            onActivated?.();
+        }
+
+        prevIsActive.current = isActive; 
+
         if (discRef.current) {
             discRef.current.opacity = isActive
                 ? 0.7 + Math.sin(timeRef.current * 3) * 0.15
@@ -53,6 +63,7 @@ function Plate({
                 : 0.5;
         }
     });
+
 
     return (
         <group>
@@ -72,8 +83,10 @@ function Plate({
                 <meshBasicMaterial ref={ringRef} color={color} transparent opacity={isActive ? 0.95 : 0.5} side={THREE.DoubleSide} />
             </mesh>
 
-            {/* colored glow that only turns on when someone is standing on it */}
-            {isActive && <pointLight position={[worldX, 0.8, worldZ]} color={color} intensity={2.0} distance={2.5} />}
+            {/* always mounted, intensity toggled instead of adding/removing — this one matters
+                even more than most, since isActive can flip on/off continuously as players step
+                on and off a plate, and removing a light forces a shader recompile every time */}
+            <pointLight position={[worldX, 0.8, worldZ]} color={color} intensity={isActive ? 2.0 : 0} distance={2.5} />
         </group>
     );
 }
@@ -90,6 +103,7 @@ type PressurePlatesProps = {
     pressurePlatesRequired: number;
     obstacleType: string;
     keysCollectedMask: number;
+    onPlateActivated: () => void;
 };
 
 // renders pressure plates at their actual maze positions
@@ -101,7 +115,8 @@ export function PressurePlates({
     players,
     pressurePlatesRequired,
     obstacleType,
-    keysCollectedMask
+    keysCollectedMask,
+    onPlateActivated
 }: PressurePlatesProps) {
     if (pressurePlatesRequired === 0 || plates.length === 0) return null;
 
@@ -135,6 +150,7 @@ export function PressurePlates({
                         worldZ={worldZ} 
                         color={color} 
                         isActive={isActive} 
+                        onActivated={onPlateActivated}
                     />
                 );
             })}

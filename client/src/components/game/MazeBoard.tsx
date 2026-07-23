@@ -8,6 +8,7 @@ import { ExitBarrier, FlashlightProp, MazePlayerAvatar, MazeWallPiece, USE_CUSTO
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
 import { Keys } from "./Keys";
+import { useSounds } from "@/hooks/use-sounds";
 
 const WALL_NORTH = 1;
 const WALL_EAST = 2;
@@ -127,6 +128,8 @@ interface MazeBoardProps {
   room: Client.Room | null;
   countdown?: number;
   currentSessionId?: string | null;
+  /** Dev-only: enables the V key first-person camera toggle */
+  viewToggleEnabled?: boolean;
 
   // preessure plates
   pressurePlatesRequired: number;
@@ -155,6 +158,8 @@ interface MazeBoardProps {
   leverCellX: number[];
   leverCellY: number[];
   leverWallDir: number[];
+  onLeverPulled?: () => void;
+
   compassYawRef: MutableRefObject<number | null>;
   leverInRangeRef?: MutableRefObject<boolean>;
   disabled?: boolean; // freezes movement and all interaction — used for the post-game results screen
@@ -328,14 +333,18 @@ function drawStrokesToCanvas(
 function GraffitiWall({
   segment,
   strokes,
+  previewStroke,
   colorForSession,
 }: {
   segment: WallSegment;
   strokes: GraffitiStrokeData[];
+  previewStroke: GraffitiStrokeData | null;
   colorForSession: (sessionId: string) => string;
 }) {
   const alongX = segment.size[0] > segment.size[2];
-  const faceLength = alongX ? segment.size[0] : segment.size[2];
+  // Extend the drawing surface by one post-width (half over each corner post) so
+  // adjacent walls' surfaces meet at post centers - you can draw across junctions
+  const faceLength = (alongX ? segment.size[0] : segment.size[2]) + WALL_THICKNESS;
   const faceHeight = segment.size[1];
   const faceOffset = (alongX ? segment.size[2] : segment.size[0]) / 2 + 0.018;
   // -PI/2 (not +PI/2) so the canvas "u" axis lines up with world +z on north-south walls
@@ -358,13 +367,20 @@ function GraffitiWall({
   useEffect(() => () => faces.forEach((face) => face.texture.dispose()), [faces]);
 
   useEffect(() => {
+    // previewStroke is only non-null for the ONE wall currently being drawn on, so this
+    // effect re-fires on every mouse-move sample only for that wall - every other wall's
+    // `strokes` stays referentially stable (see confirmedStrokesByWall below) and never
+    // redraws just because someone is drawing elsewhere in the maze.
+    const allStrokes = previewStroke && previewStroke.points.length >= 2
+      ? [...strokes, previewStroke]
+      : strokes;
     for (const face of faces) {
       const ctx = face.canvas.getContext("2d");
       if (!ctx) continue;
-      drawStrokesToCanvas(ctx, strokes.filter((stroke) => stroke.side === face.side), colorForSession);
+      drawStrokesToCanvas(ctx, allStrokes.filter((stroke) => stroke.side === face.side), colorForSession);
       face.texture.needsUpdate = true;
     }
-  }, [colorForSession, faces, strokes]);
+  }, [colorForSession, faces, strokes, previewStroke]);
 
   return (
     <group position={[segment.position[0], segment.position[1], segment.position[2]]} rotation={[0, rotY, 0]}>
@@ -639,6 +655,7 @@ export function MazeBoard({
   room,
   countdown,
   currentSessionId,
+  viewToggleEnabled,
 
   pressurePlatesRequired,
   plate0X,
@@ -665,6 +682,8 @@ export function MazeBoard({
   leverCellX,
   leverCellY,
   leverWallDir,
+  onLeverPulled,
+
   compassYawRef,
   leverInRangeRef,
   disabled = false,
@@ -688,7 +707,8 @@ export function MazeBoard({
   });
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const [leverWrongPullKey, setLeverWrongPullKey] = useState(0);
-  const firstPersonRef = useRef(false); // toggled with the V key
+  const firstPersonRef = useRef(true); // toggled with the V key
+  const noclipRef = useRef(false); // dev-only: N key - walk through walls
   const fpYawRef = useRef(0); // horizontal facing while in first person
   const fpPitchRef = useRef(0); // vertical look while in first person
   const lastSentAtRef = useRef(0);
@@ -702,6 +722,21 @@ export function MazeBoard({
   const [pendingStrokes, setPendingStrokes] = useState<Array<GraffitiStrokeData & { wallKey: string }>>([]);
   const drawingRef = useRef<{ wallKey: string; side: number; eraser: boolean; points: number[] } | null>(null);
   const pendingCounterRef = useRef(0);
+
+  // Wipe local-only, not-yet-confirmed graffiti state on every level change. Without this,
+  // a stroke drawn in the last ~1.5s before the level advances stays in pendingStrokes (or
+  // preview) after the new maze loads, and since wall keys are just grid coordinates + side,
+  // the new maze can easily have a wall reusing that same key - so old (possibly erased)
+  // graffiti could reappear on an unrelated wall in the new level.
+  useEffect(() => {
+    setPendingStrokes([]);
+    setPreview(null);
+    drawingRef.current = null;
+  }, [seed]);
+
+  const { play: playSound, sfxVolume, setSfxVolume } = useSounds();
+  const onLeverPulledRef = useRef(onLeverPulled);
+  onLeverPulledRef.current = onLeverPulled;
 
   // Mirror the server's graffiti strokes into local state whenever the room state changes
   useEffect(() => {
@@ -734,7 +769,12 @@ export function MazeBoard({
           points,
         });
       });
-      next.sort((a, b) => a.id.localeCompare(b.id));
+      // Sort by the stroke counter NUMERICALLY (ids are "s1", "s2", ... "s10"), so
+      // strokes render in the order they were drawn. Alphabetical sorting put "s10"
+      // before "s2", letting old strokes repaint OVER later eraser strokes - erased
+      // graffiti would "pop back up".
+      const strokeNumber = (id: string) => Number(id.slice(1)) || 0;
+      next.sort((a, b) => strokeNumber(a.id) - strokeNumber(b.id));
 
       setGraffiti((prev) => {
         if (
@@ -805,6 +845,23 @@ export function MazeBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridHeight, gridWidth, hasMaze, seed, mazeWalls.length]);
 
+  // One shared material per quadrant for every wall and post in it
+  const quadrantMaterials = useMemo(
+    () =>
+      QUADRANT_WALL_COLORS.map(
+        ([color, emissive]) =>
+          new THREE.MeshStandardMaterial({
+            color,
+            emissive,
+            emissiveIntensity: 0.16,
+            roughness: 0.42,
+            metalness: 0.22,
+          }),
+      ),
+    [],
+  );
+  useEffect(() => () => quadrantMaterials.forEach((m) => m.dispose()), [quadrantMaterials]);
+
   const orderedPlayers = useMemo(
     () => Array.from(players.entries()).sort(([a], [b]) => a.localeCompare(b)),
     [players],
@@ -818,7 +875,11 @@ export function MazeBoard({
     return (sessionId: string) => colorBySession.get(sessionId) ?? GRAFFITI_FALLBACK_COLOR;
   }, [players]);
 
-  const strokesByWall = useMemo(() => {
+  // Confirmed + just-sent strokes only - deliberately excludes the live in-progress
+  // preview, so this only changes when a stroke actually completes (rare) rather than on
+  // every mouse-move sample. That keeps every wall EXCEPT the one currently being drawn on
+  // from redrawing at all while someone drags out a stroke anywhere in the maze.
+  const confirmedStrokesByWall = useMemo(() => {
     const byWall = new Map<string, GraffitiStrokeData[]>();
     const add = (stroke: GraffitiStrokeData & { wallKey: string }) => {
       const list = byWall.get(stroke.wallKey);
@@ -827,14 +888,45 @@ export function MazeBoard({
     };
     graffiti.forEach(add);
     pendingStrokes.forEach(add);
-    if (preview && preview.points.length >= 2) add(preview);
     return byWall;
-  }, [graffiti, pendingStrokes, preview]);
+  }, [graffiti, pendingStrokes]);
 
   const wallSegmentByKey = useMemo(
     () => new Map(wallSegments.map((segment) => [segment.key, segment])),
     [wallSegments],
   );
+
+  // Corner posts: a small pillar at every grid corner that has at least one wall
+  // meeting it. Walls now end exactly at post faces, so no two surfaces ever
+  // overlap in the same plane - this removes the corner z-fighting at the source.
+  const cornerPosts = useMemo(() => {
+    if (!hasMaze) return [] as Array<{ key: string; position: [number, number, number] }>;
+
+    const wallBits = (cx: number, cy: number) =>
+      cx >= 0 && cy >= 0 && cx < gridWidth && cy < gridHeight
+        ? mazeWalls[mazeIndex(gridWidth, cx, cy)] ?? ALL_WALLS
+        : 0;
+
+    const posts: Array<{ key: string; position: [number, number, number] }> = [];
+    for (let cy = 0; cy <= gridHeight; cy++) {
+      for (let cx = 0; cx <= gridWidth; cx++) {
+        // The four wall edges meeting at corner (cx, cy), each readable from a
+        // cell that touches it (falling back to the twin cell for border edges)
+        const northOfBelow = (wallBits(cx, cy) & WALL_NORTH) !== 0 || (wallBits(cx, cy - 1) & WALL_SOUTH) !== 0;
+        const northOfBelowLeft = (wallBits(cx - 1, cy) & WALL_NORTH) !== 0 || (wallBits(cx - 1, cy - 1) & WALL_SOUTH) !== 0;
+        const westOfRight = (wallBits(cx, cy) & WALL_WEST) !== 0 || (wallBits(cx - 1, cy) & WALL_EAST) !== 0;
+        const westOfRightAbove = (wallBits(cx, cy - 1) & WALL_WEST) !== 0 || (wallBits(cx - 1, cy - 1) & WALL_EAST) !== 0;
+
+        if (!(northOfBelow || northOfBelowLeft || westOfRight || westOfRightAbove)) continue;
+
+        const worldX = (cx - 0.5 - (gridWidth - 1) / 2) * CELL_SIZE;
+        const worldZ = (cy - 0.5 - (gridHeight - 1) / 2) * CELL_SIZE;
+        posts.push({ key: `post-${cx}-${cy}`, position: [worldX, WALL_HEIGHT / 2, worldZ] });
+      }
+    }
+    return posts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridHeight, gridWidth, hasMaze, seed, mazeWalls.length]);
 
   const followedPlayer = currentPlayer ?? orderedPlayers[0]?.[1];
   const [followWorldX, followWorldZ] = cellToWorld(
@@ -865,6 +957,22 @@ export function MazeBoard({
     if (localY > edge && (walls & wallForDirection("down")) !== 0) return false;
     if (localY < -edge && (walls & wallForDirection("up")) !== 0) return false;
 
+    // Corner test: when in a cell's corner zone, walls of the NEIGHBORING cells
+    // that meet at that corner also block. Without this, wall ends (corner posts)
+    // had no collision - players could clip into them, which in first person put
+    // the camera inside the wall geometry.
+    if (Math.abs(localX) > edge && Math.abs(localY) > edge) {
+      const sx = localX > 0 ? 1 : -1;
+      const sy = localY > 0 ? 1 : -1;
+      const bits = (cx: number, cy: number) =>
+        cx >= 0 && cy >= 0 && cx < gridWidth && cy < gridHeight
+          ? mazeWalls[mazeIndex(gridWidth, cx, cy)] ?? ALL_WALLS
+          : ALL_WALLS;
+      const xNeighborWallY = bits(cellX + sx, cellY) & wallForDirection(sy > 0 ? "down" : "up");
+      const yNeighborWallX = bits(cellX, cellY + sy) & wallForDirection(sx > 0 ? "right" : "left");
+      if (xNeighborWallY !== 0 || yNeighborWallX !== 0) return false;
+    }
+
     if (!exitUnlocked && Math.hypot(x - exitX, y - exitY) < 0.5) return false;
 
     return true;
@@ -888,7 +996,13 @@ export function MazeBoard({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "KeyN") {
+        if (!viewToggleEnabled) return; // noclip is a dev-mode feature
+        noclipRef.current = !noclipRef.current;
+        return;
+      }
       if (event.code === "KeyV") {
+        if (!viewToggleEnabled) return; // camera toggle is a dev-mode feature
         firstPersonRef.current = !firstPersonRef.current;
         if (firstPersonRef.current) {
           requestLock();
@@ -901,6 +1015,7 @@ export function MazeBoard({
         if (disabledRef.current) return;
         if (!event.repeat) {
           room?.send("pullLever");
+          onLeverPulledRef.current?.();
         }
         return;
       }
@@ -950,7 +1065,7 @@ export function MazeBoard({
       canvas.removeEventListener("click", handleCanvasClick);
       if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
-  }, [gl, room]);
+  }, [gl, room, viewToggleEnabled]);
 
   // Graffiti drawing: hold left-click to draw on a nearby wall, right-click to erase.
   // In first person (mouse captured) you paint with the crosshair like a spray can;
@@ -970,7 +1085,8 @@ export function MazeBoard({
     // (strokes drawn there get u flipped so they land exactly where you aimed)
     const hitToWallUv = (segment: WallSegment, hit: THREE.Vector3): [number, number, number] => {
       const alongX = segment.size[0] > segment.size[2];
-      const length = alongX ? segment.size[0] : segment.size[2];
+      // Match the extended drawing surface (covers half a post at each end)
+      const length = (alongX ? segment.size[0] : segment.size[2]) + WALL_THICKNESS;
       const along = alongX
         ? hit.x - (segment.position[0] - length / 2)
         : hit.z - (segment.position[2] - length / 2);
@@ -1017,7 +1133,12 @@ export function MazeBoard({
         if (Math.hypot(nearDx, nearDz) > CELL_SIZE * GRAFFITI_RANGE) continue;
 
         boxCenter.set(segment.position[0], segment.position[1], segment.position[2]);
-        boxSize.set(segment.size[0], segment.size[1], segment.size[2]);
+        const segAlongX = segment.size[0] > segment.size[2];
+        boxSize.set(
+          segment.size[0] + (segAlongX ? WALL_THICKNESS : 0),
+          segment.size[1],
+          segment.size[2] + (segAlongX ? 0 : WALL_THICKNESS),
+        );
         box.setFromCenterAndSize(boxCenter, boxSize);
 
         if (raycaster.ray.intersectBox(box, hitPoint)) {
@@ -1297,14 +1418,20 @@ export function MazeBoard({
         const stepX = moveX * speed * Math.min(delta, 0.05);
         const stepY = moveY * speed * Math.min(delta, 0.05);
         const nextX = localPositionRef.current.x + stepX;
-
-        if (canOccupy(nextX, localPositionRef.current.y)) {
-          localPositionRef.current.x = nextX;
-        }
-
         const nextY = localPositionRef.current.y + stepY;
-        if (canOccupy(localPositionRef.current.x, nextY)) {
-          localPositionRef.current.y = nextY;
+
+        if (noclipRef.current) {
+          // Dev noclip: ignore walls, just stay inside the board
+          const pad = -0.5 + PLAYER_RADIUS;
+          localPositionRef.current.x = Math.max(pad, Math.min(gridWidth - 0.5 - PLAYER_RADIUS, nextX));
+          localPositionRef.current.y = Math.max(pad, Math.min(gridHeight - 0.5 - PLAYER_RADIUS, nextY));
+        } else {
+          if (canOccupy(nextX, localPositionRef.current.y)) {
+            localPositionRef.current.x = nextX;
+          }
+          if (canOccupy(localPositionRef.current.x, nextY)) {
+            localPositionRef.current.y = nextY;
+          }
         }
       }
     }
@@ -1411,15 +1538,22 @@ export function MazeBoard({
           );
         })}
 
-        {/* Shared freeform graffiti, one drawing surface per wall that has strokes */}
-        {Array.from(strokesByWall.entries()).map(([wallKey, wallStrokes]) => {
+        {/* Shared freeform graffiti, one drawing surface per wall that has strokes (or that
+            the local player is actively drawing the very first mark on) */}
+        {Array.from(
+          new Set([
+            ...confirmedStrokesByWall.keys(),
+            ...(preview ? [preview.wallKey] : []),
+          ]),
+        ).map((wallKey) => {
           const segment = wallSegmentByKey.get(wallKey);
           if (!segment) return null;
           return (
             <GraffitiWall
               key={wallKey}
               segment={segment}
-              strokes={wallStrokes}
+              strokes={confirmedStrokesByWall.get(wallKey) ?? []}
+              previewStroke={preview && preview.wallKey === wallKey ? preview : null}
               colorForSession={colorForSession}
             />
           );
@@ -1431,6 +1565,8 @@ export function MazeBoard({
           gridHeight={gridHeight}
           localPositionRef={localPositionRef}
           room={room}
+          onCollection={() => playSound("collect")}
+          seed={seed}
         />
 
         {orderedPlayers.map(([sessionId, player]) => (
@@ -1461,6 +1597,7 @@ export function MazeBoard({
             pressurePlatesRequired={pressurePlatesRequired}
             obstacleType={obstacleType}
             keysCollectedMask={keysCollectedMask}
+            onPlateActivated = {() => playSound("plate")}
           />
         )}
 
@@ -1473,6 +1610,7 @@ export function MazeBoard({
             gridHeight={gridHeight}
             leversPulledInOrder={leversPulledInOrder}
             wrongPullKey={leverWrongPullKey}
+            onLeverPulled = {() => playSound("lightSwitch")}
           />
         )}
 
@@ -1490,6 +1628,7 @@ export function MazeBoard({
             keysRequired={keysRequired}
             keysCollectedMask={keysCollectedMask}
             onKeyCollected={(index) => room?.send("collectKey", {index})}
+            onCollection={()=>playSound("collect")}
           />
         )}
       </group>

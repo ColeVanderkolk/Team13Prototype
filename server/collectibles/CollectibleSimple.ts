@@ -12,6 +12,12 @@ export class CollectibleSimple {
     private spawnY: number
     //tracks how long the collectible has been floating, used to calculate float
     private floatTime: number
+    // the light that makes it glow — kept in the scene even after collecting (just dimmed to
+    // zero), since removing a light from the scene forces Three.js to recompile shaders for
+    // every other lit material in view, which is what was causing a stutter on pickup
+    private glow!: THREE.PointLight
+    // the visible mesh/model — hidden on collect instead of removed, cheap and instant
+    private visual: THREE.Object3D | null = null
     //whether this collectible has been collected or not
     isCollected: boolean
 
@@ -32,6 +38,7 @@ export class CollectibleSimple {
                         object.receiveShadow = true
                     }
                 })
+                this.visual = model
                 this.spinGroup.add(model)
             })
         } else {
@@ -40,13 +47,14 @@ export class CollectibleSimple {
                 new THREE.BoxGeometry(0.4, 0.4, 0.4),
                 new THREE.MeshStandardMaterial({ color: 0xffd700 })
             )
+            this.visual = box
             this.spinGroup.add(box)
         }
 
         // glow so it's easy to spot in the maze
-        const glow = new THREE.PointLight(0xffd700, 1.0, 3)
-        glow.position.y = 0.2
-        this.spinGroup.add(glow)
+        this.glow = new THREE.PointLight(0xffd700, 1.0, 3)
+        this.glow.position.y = 0.2
+        this.spinGroup.add(this.glow)
     }
 
     //call this to add the collectible to the scene
@@ -68,10 +76,18 @@ export class CollectibleSimple {
         this.spinGroup.rotation.y += deltaTime * 1.5
     }
 
-    //call this when player collects the item to remove it from the scene and mark it as collected
-    collect(scene: THREE.Scene): void {
+    // call this when a player picks it up — hides it and turns its light off without touching
+    // the scene graph, so it disappears instantly with no shader-recompile stutter
+    collect(_scene: THREE.Scene): void {
         if (this.isCollected) return
         this.isCollected = true
+        this.glow.intensity = 0
+        if (this.visual) this.visual.visible = false
+    }
+
+    // full teardown — actually removes it from the scene. Only call this once it's really
+    // going away for good (e.g. the level changed), not on a normal in-round pickup.
+    dispose(scene: THREE.Scene): void {
         scene.remove(this.spinGroup)
     }
 }

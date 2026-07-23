@@ -70,6 +70,7 @@ function SingleLever({
   position,
   isSolved,
   isFlashing,
+  onActivated,
 }: {
   worldX: number;
   worldZ: number;
@@ -77,6 +78,7 @@ function SingleLever({
   position: number; // 1-based required pull order, also the shape's side count
   isSolved: boolean; // already pulled correctly, in order
   isFlashing: boolean; // briefly true right after a wrong-order pull, on every lever at once
+  onActivated: () => void;
 }) {
   const shapeGeometry = useMemo(() => buildShapeGeometry(position, 0.16), [position]);
 
@@ -95,9 +97,10 @@ function SingleLever({
           side={THREE.DoubleSide}
         />
       </mesh>
-      {isLit && (
-        <pointLight position={[0, 1.05, 0.15]} color={shapeColor} intensity={1.2} distance={2} />
-      )}
+      {/* always mounted, intensity toggled instead of adding/removing — removing a light from
+          the scene forces Three.js to recompile shaders for every other lit material in view,
+          which is what was causing a stutter every time a lever's lit state changed */}
+      <pointLight position={[0, 1.05, 0.15]} color={shapeColor} intensity={isLit ? 1.2 : 0} distance={2} />
 
       {/* body: a plain box flush against the wall */}
       {LEVER_BODY_MODEL_URL ? (
@@ -138,6 +141,7 @@ type LeversProps = {
   gridHeight: number;
   leversPulledInOrder: number;
   wrongPullKey: number; // increments each time the server reports a wrong-order pull
+  onLeverPulled: () => void; 
 };
 
 // levers spawn scattered through the maze, each mounted on whatever wall the maze generator already placed there.
@@ -149,6 +153,7 @@ export function Levers({
   gridHeight,
   leversPulledInOrder,
   wrongPullKey,
+  onLeverPulled,
 }: LeversProps) {
   const [isFlashing, setIsFlashing] = useState(false);
   const prevWrongPullKeyRef = useRef(wrongPullKey);
@@ -185,6 +190,7 @@ export function Levers({
             position={index + 1}
             isSolved={index < leversPulledInOrder}
             isFlashing={isFlashing}
+            onActivated={onLeverPulled}
           />
         );
       })}

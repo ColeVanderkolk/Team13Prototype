@@ -41,7 +41,14 @@ export class GameRoom extends Room<GameState> {
     private readonly PLAYER_RADIUS = 0.23;
     private readonly POSITION_GRACE = 0.9;
     private readonly COLLECTIBLE_SCORE = 10;
-    private readonly COLLECTIBLE_PICKUP_RADIUS = 0.7;
+    // Streak scoring: base points for clearing a level (x stage, x streak multiplier),
+    // the fraction of collectibles needed to keep the streak alive, and the streak cap
+    // so late levels can't completely dwarf early ones.
+    private readonly LEVEL_CLEAR_SCORE = 100;
+    private readonly STREAK_COLLECT_FRACTION = 0.5;
+    private readonly STREAK_CAP = 5;
+    private readonly COLLECTIBLE_PICKUP_RADIUS = 0.7; // used for key pickup — leave as-is
+    private readonly SCORE_COLLECTIBLE_RADIUS = 0.4; // tighter radius, score collectibles only
     private isSoloMode: boolean = false; 
     private isDevMode: boolean = false;
     private gameStartTime: number = 0;
@@ -72,7 +79,12 @@ export class GameRoom extends Room<GameState> {
         this.setState(new GameState());
         this.isSoloMode = options?.soloMode === true;
         this.isDevMode = options?.devMode === true;
-        this.setPatchRate(1000 / 60);
+        // the game is designed around exactly 1 (solo) or 3 (multiplayer) players — nothing
+        // else in the room actually enforced this, so a 4th+ person could freely join
+        this.maxClients = this.isSoloMode ? 1 : 3;
+        // 20Hz matches the client's position send rate; remote players are already
+        // visually smoothed, and 3x fewer patches means far fewer client re-renders
+        this.setPatchRate(1000 / 20);
 
         this.onMessage("position", (client, message: PositionMessage) => {
             this.handlePosition(client, message);
@@ -329,10 +341,45 @@ export class GameRoom extends Room<GameState> {
         this.disconnect();
     }
 
+    // this level's actual obstacle positions (whichever type is active), so collectibles can
+    // be kept clear of them — interacting with a collectible and an obstacle almost
+    // simultaneously was causing bugs
+    private getObstaclePositions(): { x: number; y: number }[] {
+        const positions: { x: number; y: number }[] = [];
+
+        if (this.state.obstacleType === "pressurePlates" || this.state.obstacleType === "keys") {
+            const plates = [
+                { x: this.state.plate0X, y: this.state.plate0Y },
+                { x: this.state.plate1X, y: this.state.plate1Y },
+                { x: this.state.plate2X, y: this.state.plate2Y },
+            ];
+            for (const p of plates) if (p.x >= 0) positions.push(p);
+        }
+
+        if (this.state.obstacleType === "keys") {
+            const keys = [
+                { x: this.state.key0X, y: this.state.key0Y },
+                { x: this.state.key1X, y: this.state.key1Y },
+                { x: this.state.key2X, y: this.state.key2Y },
+            ];
+            for (const k of keys) if (k.x >= 0) positions.push(k);
+        }
+
+        if (this.state.obstacleType === "levers") {
+            for (let i = 0; i < this.state.leverCellX.length; i++) {
+                positions.push({ x: this.state.leverCellX[i], y: this.state.leverCellY[i] });
+            }
+        }
+
+        return positions;
+    }
+
     private generateInitialCollectibles() {
+        const MIN_DIST_FROM_OBSTACLE = 2;
         const collectibles = new ArraySchema<Collectible>();
         const candidates: Array<{ x: number; y: number; rank: number }> = [];
         const mazeWalls = Array.from(this.state.mazeWalls);
+        const obstaclePositions = this.getObstaclePositions();
 
         for (let y = 0; y < this.state.gridHeight; y++) {
             for (let x = 0; x < this.state.gridWidth; x++) {
@@ -342,6 +389,11 @@ export class GameRoom extends Room<GameState> {
                 // Tunnel ends are reserved for the exit, so pickups never appear past the level beacon.
                 if (isDeadEndCell(this.state.gridWidth, this.state.gridHeight, mazeWalls, x, y)) continue;
                 if (distanceFromStart < 3 || distanceFromExit < 2) continue;
+
+                const tooCloseToObstacle = obstaclePositions.some(
+                    (o) => Math.abs(x - o.x) + Math.abs(y - o.y) < MIN_DIST_FROM_OBSTACLE,
+                );
+                if (tooCloseToObstacle) continue;
 
                 candidates.push({
                     x,
@@ -382,6 +434,8 @@ export class GameRoom extends Room<GameState> {
         }
 
         this.state.collectibles = collectibles;
+        this.state.collectiblesSpawnedThisLevel = collectibles.length;
+        this.state.collectiblesCollectedThisLevel = 0;
     }
 
     private calculateScores() {
@@ -400,9 +454,10 @@ export class GameRoom extends Room<GameState> {
 
         const collectible = this.state.collectibles[index];
         const distance = Math.hypot(player.x - collectible.x, player.y - collectible.y);
-        if (distance > this.COLLECTIBLE_PICKUP_RADIUS) return;
+        if (distance > this.SCORE_COLLECTIBLE_RADIUS) return;
 
-        this.state.totalScore += collectible.score || this.COLLECTIBLE_SCORE;
+        this.state.collectiblesCollectedThisLevel += 1;
+        this.state.totalScore += (collectible.score || this.COLLECTIBLE_SCORE) * this.state.scoreMultiplier;
         this.state.collectibles.splice(index, 1);
     }
 
@@ -482,7 +537,15 @@ export class GameRoom extends Room<GameState> {
     }
 
     private canAcceptPosition(sessionId: string, player: Player, x: number, y: number) {
-        if (!this.canOccupy(x, y)) return false;
+        if (this.isDevMode) {
+            // Dev rooms allow noclip: skip wall checks but stay inside the board
+            const min = -0.5 + this.PLAYER_RADIUS;
+            if (x < min || y < min) return false;
+            if (x > this.state.gridWidth - 0.5 - this.PLAYER_RADIUS) return false;
+            if (y > this.state.gridHeight - 0.5 - this.PLAYER_RADIUS) return false;
+        } else if (!this.canOccupy(x, y)) {
+            return false;
+        }
 
         const now = Date.now();
         const lastAccepted = this.lastAcceptedAt.get(sessionId) ?? now;
@@ -513,6 +576,20 @@ export class GameRoom extends Room<GameState> {
         if (localX < -edge && (walls & wallForDirection("left")) !== 0) return false;
         if (localY > edge && (walls & wallForDirection("down")) !== 0) return false;
         if (localY < -edge && (walls & wallForDirection("up")) !== 0) return false;
+
+        // Corner test (mirrors the client): neighbor-cell walls meeting at this
+        // corner also block, so wall ends can't be clipped into or cut around
+        if (Math.abs(localX) > edge && Math.abs(localY) > edge) {
+            const sx = localX > 0 ? 1 : -1;
+            const sy = localY > 0 ? 1 : -1;
+            const bits = (cx: number, cy: number) =>
+                cx >= 0 && cy >= 0 && cx < this.state.gridWidth && cy < this.state.gridHeight
+                    ? this.state.mazeWalls[mazeIndex(this.state.gridWidth, cx, cy)]
+                    : 0xf;
+            const xNeighborWallY = bits(cellX + sx, cellY) & wallForDirection(sy > 0 ? "down" : "up");
+            const yNeighborWallX = bits(cellX, cellY + sy) & wallForDirection(sx > 0 ? "right" : "left");
+            if (xNeighborWallY !== 0 || yNeighborWallX !== 0) return false;
+        }
 
         // treat the exit cell as a solid wall until the obstacle is solved
         if (!this.state.exitUnlocked && Math.hypot(x - this.state.exitX, y - this.state.exitY) < 0.5) {
@@ -871,15 +948,20 @@ export class GameRoom extends Room<GameState> {
         if (raw.length % 2 !== 0) return;
         if (!raw.every((n) => typeof n === "number" && Number.isFinite(n))) return;
 
-        // Cap strokes per wall and in total so game state can't be flooded
-        let total = 0;
-        let onThisWall = 0;
-        this.state.graffiti.forEach((stroke) => {
-            total++;
-            if (stroke.wallKey === message.wallKey) onThisWall++;
-        });
-        if (total >= this.STROKE_MAX_TOTAL) return;
-        if (onThisWall >= this.STROKE_MAX_PER_WALL) return;
+        // Cap strokes per wall and in total so game state can't be flooded.
+        // ERASER strokes are exempt: the caps exist to stop spam, but blocking
+        // erasers meant busy walls could never be cleaned - erasing silently
+        // failed once a wall hit the cap.
+        if (message.eraser !== true) {
+            let total = 0;
+            let onThisWall = 0;
+            this.state.graffiti.forEach((stroke) => {
+                total++;
+                if (stroke.wallKey === message.wallKey) onThisWall++;
+            });
+            if (total >= this.STROKE_MAX_TOTAL) return;
+            if (onThisWall >= this.STROKE_MAX_PER_WALL) return;
+        }
 
         const stroke = new GraffitiStroke();
         stroke.wallKey = message.wallKey as string;
@@ -896,6 +978,22 @@ export class GameRoom extends Room<GameState> {
 
     private advanceLevel() {
         console.log("Advancing to stage", this.state.stage + 1);
+
+        // Clearing a level is worth points (x stage, x current streak multiplier) -
+        // previously levels paid nothing, so score only measured collectible farming
+        this.state.totalScore += this.LEVEL_CLEAR_SCORE * this.state.stage * this.state.scoreMultiplier;
+
+        // Streak check: at least half this level's collectibles keeps the streak
+        // climbing (capped); anything less resets it to x1. Obstacles aren't part of
+        // the check because they already gate the exit - you can't skip them.
+        const spawned = this.state.collectiblesSpawnedThisLevel;
+        const keptStreak =
+            spawned === 0 ||
+            this.state.collectiblesCollectedThisLevel / spawned >= this.STREAK_COLLECT_FRACTION;
+        this.state.scoreMultiplier = keptStreak
+            ? Math.min(this.STREAK_CAP, this.state.scoreMultiplier + 1)
+            : 1;
+
         const nextStage = this.state.stage + 1;
         this.buildMazeForStage(nextStage);
         this.generateInitialCollectibles();
