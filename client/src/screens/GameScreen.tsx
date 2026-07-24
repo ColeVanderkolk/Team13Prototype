@@ -283,7 +283,7 @@ export const GameScreen = ({
     const SETTINGS_CLOSE_MS = 300; 
 
     
-    const { play: playSound, sfxVolume, setSfxVolume } = useSounds(); 
+    const { play: playSound, playLoop, stopLoop, sfxVolume, setSfxVolume } = useSounds(); 
     const prevExitUnlocked = useRef(exitUnlocked);
     const prevStage = useRef(stage);
 

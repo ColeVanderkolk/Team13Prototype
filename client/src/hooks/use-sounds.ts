@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState } from "react";
 
-const SOUNDS = ["collect", "unlock", "lightSwitch", "progress", "plate", "spray",
+const SOUNDS = ["collect", "unlock", "lightSwitch", "progress", "plate", "draw",
     "error", "key"
 ] as const; 
 type SoundName = (typeof SOUNDS)[number];
@@ -17,7 +17,7 @@ export const useSounds = () => {
             lightSwitch: new Audio("/sounds/light-switch.wav"),
             progress: new Audio("/sounds/next-level.mp3"),
             plate: new Audio("/sounds/plate-click.mp3"),
-            spray: new Audio("/sounds/spraycan.wav"),
+            draw: new Audio("/sounds/spray-paint.mp3"),
             error: new Audio("/sounds/error-buzz.wav"),
             key: new Audio("/sounds/gold.mp3")
         };
@@ -40,10 +40,26 @@ export const useSounds = () => {
         }, 0);
     }, []);
 
+    const playLoop = useCallback((name: SoundName) => {
+        const audio = audioRef.current![name];
+        if (!audio.paused) return;
+        audio.loop = true;
+        audio.volume = volumeRef.current;
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+    }, []);
+
+    const stopLoop = useCallback((name: SoundName) => {
+        const audio = audioRef.current![name];
+        audio.pause();
+        audio.currentTime = 0;
+        audio.loop = false;
+    }, []);
+
     const setSfxVolume = useCallback((volume: number) => {
         volumeRef.current = volume;
         setSfxVolumeState(volume);
     }, []);
 
-    return { play, sfxVolume, setSfxVolume };
+    return { play, playLoop, stopLoop, sfxVolume, setSfxVolume };
 };
