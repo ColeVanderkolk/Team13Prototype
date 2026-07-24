@@ -17,7 +17,7 @@ export const useSounds = () => {
             lightSwitch: new Audio("/sounds/light-switch.wav"),
             progress: new Audio("/sounds/next-level.mp3"),
             plate: new Audio("/sounds/plate-click.mp3"),
-            draw: new Audio("/sounds/spray-paint.mp3"),
+            draw: new Audio("/sounds/spraypaint.mp4"),
             error: new Audio("/sounds/error-buzz.wav"),
             key: new Audio("/sounds/gold.mp3")
         };
