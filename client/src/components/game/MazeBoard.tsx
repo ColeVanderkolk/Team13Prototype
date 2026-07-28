@@ -4,7 +4,7 @@ import { useTexture } from "@react-three/drei";
 import type * as Client from "colyseus.js";
 import * as THREE from "three";
 import { MazeCollectibles } from "./MazeCollectibles";
-import { ExitBarrier, FlashlightProp, MazePlayerAvatar, MazeWallPiece, USE_CUSTOM_WALL_MODELS } from "./MazeModels";
+import { ExitBarrier, FlashlightProp, MazePlayerAvatar, MazeWallPiece, USE_CUSTOM_WALL_MODELS, HAS_WALL_MODEL } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
 import { Keys } from "./Keys";
@@ -399,7 +399,7 @@ function GraffitiWall({
 }
 
 function TexturedMazeFloor({ width, depth }: { width: number; depth: number }) {
-  const texture = useTexture(FLOOR_TEXTURE_URL);
+  const texture = useTexture(FLOOR_TEXTURE_URL) as THREE.Texture;
   const { gl } = useThree();
 
   useEffect(() => {
@@ -436,7 +436,7 @@ function MazeFloor({ width, depth }: { width: number; depth: number }) {
 }
 
 function TexturedSkySphere({ radius }: { radius: number }) {
-  const texture = useTexture(SKY_TEXTURE_URL);
+  const texture = useTexture(SKY_TEXTURE_URL) as THREE.Texture;
 
   useEffect(() => {
     texture.colorSpace = THREE.SRGBColorSpace;

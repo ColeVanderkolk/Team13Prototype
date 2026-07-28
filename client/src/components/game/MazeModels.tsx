@@ -10,6 +10,8 @@ const WALL_MODEL_URLS = [
   (import.meta.env.VITE_MAZE_WALL_MODEL_URL_4 || WALL_MODEL_URL).trim(),
 ];
 export const USE_CUSTOM_WALL_MODELS = WALL_MODEL_URLS.some(Boolean);
+// Lets MazeBoard fall back to per-wall rendering when a custom Blender wall model is set
+export const HAS_WALL_MODEL = USE_CUSTOM_WALL_MODELS;
 const PLAYER_MODEL_URL = (import.meta.env.VITE_MAZE_PLAYER_MODEL_URL || "").trim();
 const FLASHLIGHT_MODEL_URL = (import.meta.env.VITE_MAZE_FLASHLIGHT_MODEL_URL || "").trim();
 const EXIT_BARRIER_MODEL_URL = (import.meta.env.VITE_EXIT_BARRIER_MODEL_URL || "").trim();
