@@ -158,7 +158,7 @@ interface MazeBoardProps {
   leverCellX: number[];
   leverCellY: number[];
   leverWallDir: number[];
-  onLeverPulled?: () => void;
+  onWrongPull?: () => void;
 
   compassYawRef: MutableRefObject<number | null>;
   leverInRangeRef?: MutableRefObject<boolean>;
@@ -682,7 +682,7 @@ export function MazeBoard({
   leverCellX,
   leverCellY,
   leverWallDir,
-  onLeverPulled,
+  onWrongPull,
 
   compassYawRef,
   leverInRangeRef,
@@ -723,6 +723,9 @@ export function MazeBoard({
   const drawingRef = useRef<{ wallKey: string; side: number; eraser: boolean; points: number[] } | null>(null);
   const pendingCounterRef = useRef(0);
 
+  const prevLeversPulledInOrderRef = useRef(leversPulledInOrder);
+  const drawSoundRef = useRef<HTMLAudioElement | null>(null);
+
   // Wipe local-only, not-yet-confirmed graffiti state on every level change. Without this,
   // a stroke drawn in the last ~1.5s before the level advances stays in pendingStrokes (or
   // preview) after the new maze loads, and since wall keys are just grid coordinates + side,
@@ -734,9 +737,17 @@ export function MazeBoard({
     drawingRef.current = null;
   }, [seed]);
 
-  const { play: playSound, sfxVolume, setSfxVolume } = useSounds();
-  const onLeverPulledRef = useRef(onLeverPulled);
-  onLeverPulledRef.current = onLeverPulled;
+  const { play: playSound, playLoop, stopLoop, sfxVolume, setSfxVolume } = useSounds();
+
+  // fires light switch pull sound only when correct lever is pulled
+  useEffect(() =>  {
+    if (leversPulledInOrder > prevLeversPulledInOrderRef.current) {
+      // playSound(l)
+      playSound("lightSwitch");
+    }
+    prevLeversPulledInOrderRef.current = leversPulledInOrder;
+  }, [leversPulledInOrder]);
+
 
   // Mirror the server's graffiti strokes into local state whenever the room state changes
   useEffect(() => {
@@ -1014,8 +1025,17 @@ export function MazeBoard({
       if (event.code === "KeyE") {
         if (disabledRef.current) return;
         if (!event.repeat) {
+          const playerX = localPositionRef.current.x;
+          const playerY = localPositionRef.current.y;
+
+          const nearLever = leverCellX.some((cx, i) => {
+            const cy = leverCellY[i];
+            return Math.hypot(playerX - cx, playerY - cy) < LEVER_INTERACT_RADIUS;
+          });
+
+          if (!nearLever) return;
+
           room?.send("pullLever");
-          onLeverPulledRef.current?.();
         }
         return;
       }
@@ -1183,6 +1203,8 @@ export function MazeBoard({
         side: active.side,
       });
 
+      // playSound("spray");
+
       // Keep it visible locally until the server echoes it back, so it doesn't blink
       pendingCounterRef.current += 1;
       const pendingId = `pending-${pendingCounterRef.current}`;
@@ -1257,6 +1279,7 @@ export function MazeBoard({
         points: [storedU(hit.u, hit.side), hit.v],
       };
       publishPreview();
+      playLoop("draw");
     };
 
     const handleMouseMove = (event: MouseEvent) => {
@@ -1266,7 +1289,10 @@ export function MazeBoard({
       if (hit) appendPoint(hit);
     };
 
-    const handleMouseUp = () => finalizeStroke();
+    const handleMouseUp = () => {
+      stopLoop("draw");
+      finalizeStroke();
+    }
     const handleContextMenu = (event: Event) => event.preventDefault();
 
     // In first person the crosshair is fixed at screen center, so sample the aim
@@ -1610,7 +1636,7 @@ export function MazeBoard({
             gridHeight={gridHeight}
             leversPulledInOrder={leversPulledInOrder}
             wrongPullKey={leverWrongPullKey}
-            onLeverPulled = {() => playSound("lightSwitch")}
+            onWrongPull={() => playSound("error")}
           />
         )}
 
@@ -1628,7 +1654,7 @@ export function MazeBoard({
             keysRequired={keysRequired}
             keysCollectedMask={keysCollectedMask}
             onKeyCollected={(index) => room?.send("collectKey", {index})}
-            onCollection={()=>playSound("collect")}
+            onCollection={()=>playSound("key")}
           />
         )}
       </group>

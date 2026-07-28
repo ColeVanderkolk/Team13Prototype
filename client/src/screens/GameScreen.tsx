@@ -135,7 +135,7 @@ interface GameScreenProps {
     leverCellX: number[];
     leverCellY: number[];
     leverWallDir: number[];
-    onLeverPulled?: () => void;
+    onWrongPull?: () => void;
 }
 
 /** Horizontal slider styled to match the in-game score bar (cyan frame + navy→white gradient fill). */
@@ -283,7 +283,7 @@ export const GameScreen = ({
     const SETTINGS_CLOSE_MS = 300; 
 
     
-    const { play: playSound, sfxVolume, setSfxVolume } = useSounds(); 
+    const { play: playSound, playLoop, stopLoop, sfxVolume, setSfxVolume } = useSounds(); 
     const prevExitUnlocked = useRef(exitUnlocked);
     const prevStage = useRef(stage);
 
@@ -825,7 +825,7 @@ export const GameScreen = ({
           leverCellX={leverCellX}
           leverCellY={leverCellY}
           leverWallDir={leverWallDir}
-          onLeverPulled={() => playSound("lightSwitch")}
+          onWrongPull={() => playSound("error")}
           compassYawRef={compassYawRef}
           leverInRangeRef={leverInRangeRef}
           disabled={showResults}
