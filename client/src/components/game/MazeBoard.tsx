@@ -42,10 +42,17 @@ const PLAYER_RADIUS = 0.23;
 const CAM_ANGLE = Math.PI * 0.25;
 const POSITION_SEND_INTERVAL = 1 / 20;
 
-// mirrors the server's leverTriggerPosition/LEVER_RADIUS (GameRoom.ts) — used only for the
-// "press E" hint, not to decide the actual pull (the server remains authoritative for that).
+// mirrors the server's leverTriggerPosition (GameRoom.ts)
 const LEVER_INTERACT_INSET = 0.35;
-const LEVER_INTERACT_RADIUS = 0.55;
+
+// Deliberately tighter than the server's own LEVER_RADIUS (0.55, GameRoom.ts): being
+// anywhere in the lever's cell is enough for the server to accept a pull, but the "press E"
+// hint (and the client's own pre-check before sending) should only fire once the player has
+// actually walked up to the lever itself, not just entered its cell.
+const LEVER_PROMPT_RADIUS = 0.32;
+// Cosine of the half-angle of the "facing" cone in front of the player (~70°, so a ~140°
+// total cone) — lets the lever be a little off-center without requiring pixel-perfect aim.
+const LEVER_FACING_MIN_DOT = 0.35;
 
 function leverTriggerPosition(cellX: number, cellY: number, wallDir: number): [number, number] {
   let offsetX = 0;
@@ -55,6 +62,48 @@ function leverTriggerPosition(cellX: number, cellY: number, wallDir: number): [n
   else if (wallDir === WALL_WEST) offsetX = -LEVER_INTERACT_INSET;
   else if (wallDir === WALL_EAST) offsetX = LEVER_INTERACT_INSET;
   return [cellX + offsetX, cellY + offsetY];
+}
+
+// Single source of truth for "is the player close enough to, and facing, an interactable
+// lever right now" — shared by the prompt (useFrame) and the actual E-key handler, so the
+// hint showing and the pull working can never disagree. Reads lever positions from a ref
+// (kept fresh every render) rather than closing over the props directly, so it can be used
+// inside a long-lived event listener without going stale when the level changes.
+function findFacingLeverIndex(
+  px: number,
+  py: number,
+  yaw: number,
+  cellX: number[],
+  cellY: number[],
+  wallDir: number[],
+): number {
+  const playerCellX = Math.round(px);
+  const playerCellY = Math.round(py);
+  const forwardX = Math.sin(yaw);
+  const forwardY = Math.cos(yaw);
+
+  for (let i = 0; i < cellX.length; i++) {
+    // must be standing in the same cell the lever is mounted in — otherwise a wall may
+    // separate the player from a trigger point that's still geometrically close by
+    if (cellX[i] !== playerCellX || cellY[i] !== playerCellY) continue;
+
+    const [triggerX, triggerY] = leverTriggerPosition(cellX[i], cellY[i], wallDir[i]);
+    const dx = triggerX - px;
+    const dy = triggerY - py;
+    const distance = Math.hypot(dx, dy);
+    if (distance >= LEVER_PROMPT_RADIUS) continue;
+
+    // skip the facing check when almost exactly on top of the trigger — direction is
+    // meaningless at ~zero distance, and this shouldn't be able to fail the interaction
+    if (distance > 0.02) {
+      const facingDot = (dx / distance) * forwardX + (dy / distance) * forwardY;
+      if (facingDot < LEVER_FACING_MIN_DOT) continue;
+    }
+
+    return i;
+  }
+
+  return -1;
 }
 
 // First-person mode (toggle with V)
@@ -726,6 +775,12 @@ export function MazeBoard({
   const prevLeversPulledInOrderRef = useRef(leversPulledInOrder);
   const drawSoundRef = useRef<HTMLAudioElement | null>(null);
 
+  // Kept in sync every render (not inside an effect) so the long-lived keydown listener
+  // below can always read this level's actual lever positions through the ref, instead of
+  // closing over the leverCellX/leverCellY props directly and going stale after a level change.
+  const leverPositionsRef = useRef({ cellX: leverCellX, cellY: leverCellY, wallDir: leverWallDir });
+  leverPositionsRef.current = { cellX: leverCellX, cellY: leverCellY, wallDir: leverWallDir };
+
   // Wipe local-only, not-yet-confirmed graffiti state on every level change. Without this,
   // a stroke drawn in the last ~1.5s before the level advances stays in pendingStrokes (or
   // preview) after the new maze loads, and since wall keys are just grid coordinates + side,
@@ -1025,15 +1080,17 @@ export function MazeBoard({
       if (event.code === "KeyE") {
         if (disabledRef.current) return;
         if (!event.repeat) {
-          const playerX = localPositionRef.current.x;
-          const playerY = localPositionRef.current.y;
+          const { cellX, cellY, wallDir } = leverPositionsRef.current;
+          const leverIndex = findFacingLeverIndex(
+            localPositionRef.current.x,
+            localPositionRef.current.y,
+            fpYawRef.current,
+            cellX,
+            cellY,
+            wallDir,
+          );
 
-          const nearLever = leverCellX.some((cx, i) => {
-            const cy = leverCellY[i];
-            return Math.hypot(playerX - cx, playerY - cy) < LEVER_INTERACT_RADIUS;
-          });
-
-          if (!nearLever) return;
+          if (leverIndex === -1) return;
 
           room?.send("pullLever");
         }
@@ -1383,24 +1440,11 @@ export function MazeBoard({
     compassYawRef.current = firstPersonRef.current ? fpYawRef.current : null;
 
     if (leverInRangeRef) {
-      let inRange = false;
-      if (obstacleType === "levers") {
-        const { x: px, y: py } = localPositionRef.current;
-        const playerCellX = Math.round(px);
-        const playerCellY = Math.round(py);
-        for (let i = 0; i < leverCellX.length; i++) {
-          // must be standing in the same cell the lever is mounted in — otherwise a wall may
-          // separate the player from a trigger point that's still geometrically close by
-          if (leverCellX[i] !== playerCellX || leverCellY[i] !== playerCellY) continue;
-
-          const [triggerX, triggerY] = leverTriggerPosition(leverCellX[i], leverCellY[i], leverWallDir[i]);
-          if (Math.hypot(px - triggerX, py - triggerY) < LEVER_INTERACT_RADIUS) {
-            inRange = true;
-            break;
-          }
-        }
-      }
-      leverInRangeRef.current = inRange;
+      const { x: px, y: py } = localPositionRef.current;
+      const { cellX, cellY, wallDir } = leverPositionsRef.current;
+      leverInRangeRef.current =
+        obstacleType === "levers" &&
+        findFacingLeverIndex(px, py, fpYawRef.current, cellX, cellY, wallDir) !== -1;
     }
 
     if (!room || !currentPlayer || !hasMaze || countdown > 0) return;

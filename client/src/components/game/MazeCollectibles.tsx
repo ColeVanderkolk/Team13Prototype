@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type * as Client from "colyseus.js";
-// Reuse the teammate-built prototype class directly so its current spin/float/collect behavior stays intact.
-import { CollectibleSimple } from "../../../../server/collectibles/CollectibleSimple.ts";
+import { CollectibleSimple } from "./CollectibleSimple";
 
 const CELL_SIZE = 1.8;
 const PICKUP_RADIUS = 0.35; // tightened — matches SCORE_COLLECTIBLE_RADIUS on the server
