@@ -49,8 +49,11 @@ export class GameRoom extends Room<GameState> {
     private readonly STREAK_CAP = 5;
     private readonly COLLECTIBLE_PICKUP_RADIUS = 0.7; // used for key pickup — leave as-is
     private readonly SCORE_COLLECTIBLE_RADIUS = 0.4; // tighter radius, score collectibles only
-    private isSoloMode: boolean = false; 
+    private isSoloMode: boolean = false;
     private isDevMode: boolean = false;
+    // Last level's obstacle type, so configureLevelObjective() can avoid rolling the same one
+    // twice in a row. Null on the very first level — nothing to avoid repeating yet.
+    private previousObstacleType: string | null = null;
     private gameStartTime: number = 0;
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
@@ -661,10 +664,14 @@ export class GameRoom extends Room<GameState> {
         this.state.exitUnlocked = false;
         this.state.playersAtExit = 0;
 
-        // pick one obstacle type randomly from the pool each level
-        // add more strings here later when new obstacle types are built
+        // pick one obstacle type randomly from the pool each level, never the same one twice
+        // in a row — add more strings here later when new obstacle types are built
         const OBSTACLE_POOL = ["pressurePlates", "keys", "levers"];
-        this.state.obstacleType = OBSTACLE_POOL[Math.floor(Math.random() * OBSTACLE_POOL.length)];
+        const choices = this.previousObstacleType
+            ? OBSTACLE_POOL.filter((type) => type !== this.previousObstacleType)
+            : OBSTACLE_POOL;
+        this.state.obstacleType = choices[Math.floor(Math.random() * choices.length)];
+        this.previousObstacleType = this.state.obstacleType;
         console.log("obstacleType set to:", this.state.obstacleType);
 
         if (this.state.obstacleType === "pressurePlates") {
