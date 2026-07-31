@@ -689,6 +689,377 @@ function PlayerToken({
   );
 }
 
+// Team hasn't signed off on the new portal exit yet - flip this to "diamond" and rebuild to
+// preview the original marker instead, no digging through git history required. Safe to
+// delete this flag and the "diamond" branch/ExitDiamondMarker entirely once everyone's settled
+// on one look.
+const EXIT_VISUAL: "portal" | "diamond" = "portal";
+
+// The original exit marker, kept around only so EXIT_VISUAL can switch back to it.
+function ExitDiamondMarker({ worldX, worldZ }: { worldX: number; worldZ: number }) {
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[worldX, 0.05, worldZ]}>
+        <ringGeometry args={[0.32, 0.7, 44]} />
+        <meshBasicMaterial color="#facc15" transparent opacity={0.88} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[worldX, 0.28, worldZ]}>
+        <octahedronGeometry args={[0.38, 0]} />
+        <meshStandardMaterial color="#facc15" emissive="#f59e0b" emissiveIntensity={0.7} roughness={0.28} />
+      </mesh>
+    </>
+  );
+}
+
+// Shared between ExitPortal and ExitPathMarker so the path triangle always lines up exactly
+// with the doorway it leads into, instead of two components guessing matching numbers.
+const PORTAL_HALF_WIDTH = CELL_SIZE / 2 - 0.14;
+const PORTAL_HALF_HEIGHT = WALL_HEIGHT / 2;
+const PORTAL_RIM = 0.06;
+// Depth from the doorway threshold back to the void's rear wall. The portal sits at the
+// threshold (THRESHOLD_OFFSET from the cell center, toward the opening), and the real solid
+// dead-end wall is roughly another (CELL_SIZE/2 - WALL_THICKNESS/2) further on - a good deal
+// more room than it might look like from the threshold alone, since that's most of the cell's
+// far side too. Kept a safe margin under that combined distance so it can't overshoot into
+// the real wall the way the original cell-centered version did.
+const PORTAL_VOID_DEPTH = 1.3;
+const PORTAL_LIFT = 0.015;
+// How far past the real floor level the void box's bottom face extends, so it fully covers
+// the floor grid texture instead of leaving a sliver of it visible right at the threshold.
+const PORTAL_FLOOR_OVERLAP = 0.06;
+
+// ExitPathMarker's triangle tip, expressed relative to ExitPortal's own group origin (they're
+// two separate groups sharing the same X/Z position and rotation but different Y), used for
+// the floor path itself and as the X/Z (not Y) target for particles below.
+const PORTAL_TIP_LOCAL_Y = 0.05 - (PORTAL_HALF_HEIGHT + PORTAL_LIFT);
+const PORTAL_TIP_LOCAL_Z = -(PORTAL_VOID_DEPTH - 0.15); // just short of the void's back wall
+// Particles converge higher up than the floor-level triangle tip - matching it exactly kept
+// dragging every particle down toward that low point for most of its life, which read as
+// clumping low in the void rather than using the whole opening.
+const PORTAL_PARTICLE_TARGET_Y = PORTAL_TIP_LOCAL_Y * 0.4;
+
+const PORTAL_PARTICLE_COUNT = 22;
+// THREE.PointsMaterial only supports one fixed size for a whole points object, not
+// per-particle - so particles are split across these size tiers as they travel (see
+// PortalParticles), each its own <points>/material, to make them shrink as they recede
+// deeper into the void instead of staying a constant size regardless of depth.
+const PORTAL_SIZE_TIERS = [
+  { maxT: 0.34, size: 0.065 },
+  { maxT: 0.67, size: 0.038 },
+  { maxT: 1.01, size: 0.018 }, // >1 so a particle at t=1 still lands in the last tier
+];
+
+// Soft radial-gradient dot instead of PointsMaterial's default hard-edged square - this is
+// what actually made the particles look like glowing motes instead of flat pixelated confetti.
+function createGlowSpriteTexture(): THREE.Texture {
+  const size = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    // Solid, well-defined bright core out to 60% of the radius, then a thin soft edge -
+    // the previous gradient faded gradually from the very center, which read as an
+    // out-of-focus blur rather than a crisp glowing point.
+    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    gradient.addColorStop(0, "rgba(255,255,255,1)");
+    gradient.addColorStop(0.6, "rgba(255,255,255,1)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+  }
+  return new THREE.CanvasTexture(canvas);
+}
+
+// Motes drifting inward from the frame toward the path triangle's own tip (not just the
+// doorway's flat center) and fading out there, then respawning at the edge - the same
+// vanishing point as the floor path, so both effects read as one thing being pulled toward a
+// single point in the dark instead of two unrelated animations.
+function PortalParticles({
+  halfWidth,
+  halfHeight,
+  tipX,
+  tipY,
+  tipZ,
+}: {
+  halfWidth: number;
+  halfHeight: number;
+  tipX: number;
+  tipY: number;
+  tipZ: number;
+}) {
+  // one ref/position-buffer per size tier - a particle is written into whichever tier's
+  // buffer matches its current depth each frame (see the tier bucketing in useFrame below)
+  const tierRefs = [useRef<THREE.Points>(null), useRef<THREE.Points>(null), useRef<THREE.Points>(null)];
+  const tierPositions = useMemo(
+    () => PORTAL_SIZE_TIERS.map(() => new Float32Array(PORTAL_PARTICLE_COUNT * 3)),
+    [],
+  );
+
+  const randomSpawn = () => {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 0.55 + Math.random() * 0.45; // reaches out to the void's actual edges, not just partway
+    return {
+      baseX: Math.cos(angle) * radius * halfWidth,
+      baseY: Math.sin(angle) * radius * halfHeight,
+      // two independent sine waves per axis, different random frequency and phase per
+      // particle - the sum of two mismatched waves doesn't repeat cleanly the way a single
+      // sine (or a geometric spiral) does, which is what actually reads as organic drifting
+      // rather than a computed path
+      freqX1: 0.3 + Math.random() * 0.4,
+      freqX2: 0.9 + Math.random() * 0.6,
+      freqY1: 0.3 + Math.random() * 0.4,
+      freqY2: 0.9 + Math.random() * 0.6,
+      phaseX1: Math.random() * Math.PI * 2,
+      phaseX2: Math.random() * Math.PI * 2,
+      phaseY1: Math.random() * Math.PI * 2,
+      phaseY2: Math.random() * Math.PI * 2,
+      wobbleAmp: 0.1 + Math.random() * 0.08,
+    };
+  };
+
+  const particles = useMemo(
+    () =>
+      Array.from({ length: PORTAL_PARTICLE_COUNT }, () => ({
+        ...randomSpawn(),
+        t: Math.random(), // 0 (just spawned) .. 1 (arrived at the tip) - staggered start
+        speed: 0.045 + Math.random() * 0.045, // slow drift, not a beeline
+      })),
+    [],
+  );
+
+  const glowTexture = useMemo(() => createGlowSpriteTexture(), []);
+  useEffect(() => () => glowTexture.dispose(), [glowTexture]);
+
+  const tierMaterials = useMemo(
+    () =>
+      PORTAL_SIZE_TIERS.map(
+        (tier) =>
+          new THREE.PointsMaterial({
+            color: "#ddd6fe",
+            map: glowTexture,
+            size: tier.size,
+            transparent: true,
+            opacity: 0.95,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            sizeAttenuation: true,
+          }),
+      ),
+    [glowTexture],
+  );
+  useEffect(() => () => tierMaterials.forEach((m) => m.dispose()), [tierMaterials]);
+
+  useFrame((state, delta) => {
+    const tierCounts = [0, 0, 0];
+
+    for (let i = 0; i < PORTAL_PARTICLE_COUNT; i++) {
+      const p = particles[i];
+      p.t += p.speed * delta;
+      if (p.t >= 1) {
+        // respawn at a fresh edge position rather than snapping back visibly
+        Object.assign(p, randomSpawn());
+        p.t = 0;
+        p.speed = 0.045 + Math.random() * 0.045;
+      }
+
+      // underlying trend: drifts from this particle's spawn point down to the tip. On its
+      // own this is a straight line - the wobble below is what actually draws the path, so
+      // no particle ever travels in a literal straight line.
+      const trendX = p.baseX * (1 - p.t) + tipX * p.t;
+      const trendY = p.baseY * (1 - p.t) + tipY * p.t;
+      const trendZ = 0.02 * (1 - p.t) + tipZ * p.t;
+
+      // fades out as it nears the tip, so it still actually arrives there instead of
+      // wandering past it
+      const wobbleFalloff = 1 - p.t;
+      const time = state.clock.elapsedTime;
+      const wobbleX =
+        (Math.sin(time * p.freqX1 + p.phaseX1) + Math.sin(time * p.freqX2 + p.phaseX2) * 0.5) *
+        p.wobbleAmp *
+        wobbleFalloff;
+      const wobbleY =
+        (Math.sin(time * p.freqY1 + p.phaseY1) + Math.sin(time * p.freqY2 + p.phaseY2) * 0.5) *
+        p.wobbleAmp *
+        wobbleFalloff;
+
+      const x = trendX + wobbleX;
+      const y = trendY + wobbleY;
+      const z = trendZ;
+
+      // which size tier this particle currently belongs to, based on how far into its
+      // journey (and so how deep into the void) it is right now
+      let tierIndex = PORTAL_SIZE_TIERS.findIndex((tier) => p.t <= tier.maxT);
+      if (tierIndex === -1) tierIndex = PORTAL_SIZE_TIERS.length - 1;
+
+      const slot = tierCounts[tierIndex]++;
+      const buffer = tierPositions[tierIndex];
+      buffer[slot * 3] = x;
+      buffer[slot * 3 + 1] = y;
+      buffer[slot * 3 + 2] = z;
+    }
+
+    for (let tierIndex = 0; tierIndex < PORTAL_SIZE_TIERS.length; tierIndex++) {
+      const points = tierRefs[tierIndex].current;
+      if (!points) continue;
+      // only render however many particles actually landed in this tier this frame -
+      // the rest of the buffer is stale data from previous frames, left unrendered
+      points.geometry.setDrawRange(0, tierCounts[tierIndex]);
+      const attr = points.geometry.attributes.position as THREE.BufferAttribute;
+      attr.needsUpdate = true;
+    }
+  });
+
+  return (
+    <>
+      {PORTAL_SIZE_TIERS.map((_tier, tierIndex) => (
+        <points key={tierIndex} ref={tierRefs[tierIndex]} material={tierMaterials[tierIndex]}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[tierPositions[tierIndex], 3]} />
+          </bufferGeometry>
+        </points>
+      ))}
+    </>
+  );
+}
+
+// Floor marker leading up to the exit - an isosceles triangle narrowing to a point right at
+// the doorway threshold, reading as a path funneling toward it, rather than a plain ring.
+function ExitPathMarker({
+  worldX,
+  worldZ,
+  orientationY,
+}: {
+  worldX: number;
+  worldZ: number;
+  orientationY: number;
+}) {
+  // Base sits at the doorway threshold, flush with the inner side of the rim (matches
+  // ExitPortal's own frame inner edge); tip recedes to the back of the void box - a path
+  // converging into the darkness instead of one sitting out in the corridor.
+  const HALF_BASE = PORTAL_HALF_WIDTH - PORTAL_RIM;
+  const LENGTH = PORTAL_VOID_DEPTH;
+
+  // Built by hand (not via THREE.Shape's triangulator) so each of the 3 corners can get its
+  // own explicit color - bright violet at the base, fading to near-black at the tip, so the
+  // path dissolves into the void instead of ending in a hard-edged line.
+  const geometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    // base at the doorway threshold (shape-local Y=0), tip receding into the void
+    // (shape-local Y=+LENGTH) - the flat -90° X rotation below maps shape-local Y to
+    // group-local -Z, landing the base at Z=0 (the threshold) and the tip at Z=-LENGTH
+    // (the back of ExitPortal's void box).
+    const positionArray = new Float32Array([
+      -HALF_BASE, 0, 0,
+      HALF_BASE, 0, 0,
+      0, LENGTH, 0,
+    ]);
+    geo.setAttribute("position", new THREE.BufferAttribute(positionArray, 3));
+
+    const baseColor = new THREE.Color("#a78bfa");
+    const tipColor = new THREE.Color("#050208");
+    const colorArray = new Float32Array([
+      baseColor.r, baseColor.g, baseColor.b,
+      baseColor.r, baseColor.g, baseColor.b,
+      tipColor.r, tipColor.g, tipColor.b,
+    ]);
+    geo.setAttribute("color", new THREE.BufferAttribute(colorArray, 3));
+    geo.setIndex([0, 1, 2]);
+    return geo;
+  }, []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return (
+    <group position={[worldX, 0.05, worldZ]} rotation={[0, orientationY, 0]}>
+      <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+        <meshBasicMaterial vertexColors transparent opacity={0.65} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+// A standing doorway you walk into, rather than a floating pickup - facing whichever side
+// of the (dead-end) exit cell is actually open, so it reads as something you step through.
+function ExitPortal({
+  worldX,
+  worldZ,
+  orientationY,
+}: {
+  worldX: number;
+  worldZ: number;
+  orientationY: number;
+}) {
+  // Base color matches ExitBarrier (the wall that blocks this same exit before it's solved),
+  // so the exit reads as one consistent color identity, blocked or open. The glow itself uses
+  // a much lighter violet, not the barrier's dark "#4c1d95" - that color's luminance is so low
+  // that no reasonable emissiveIntensity pushed it over Bloom's luminanceThreshold (0.5), so it
+  // just looked flat no matter how bright the intensity number was. A lighter, more saturated
+  // violet actually crosses that threshold and blooms, which a bland/dim color can't do
+  // regardless of intensity.
+  const frameMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: "#7c3aed",
+        emissive: "#a78bfa",
+        emissiveIntensity: 1.8,
+        roughness: 0.25,
+        metalness: 0.1,
+        side: THREE.DoubleSide,
+      }),
+    [],
+  );
+  useEffect(() => () => frameMaterial.dispose(), [frameMaterial]);
+
+  // gentle brightness breathing instead of spinning - a spinning frame reads oddly next to
+  // straight corridor walls the way a spinning ring didn't. This is a self-lit material
+  // property, not a light source - it doesn't shine on anything else, so brightening it here
+  // is safe and separate from the actual exit pointLight's reach (see exitUnlocked below),
+  // which is what was leaking through walls into other corridors.
+  useFrame((state) => {
+    frameMaterial.emissiveIntensity = 1.6 + Math.sin(state.clock.elapsedTime * 1.4) * 0.5;
+  });
+
+  return (
+    <group position={[worldX, PORTAL_HALF_HEIGHT + PORTAL_LIFT, worldZ]} rotation={[0, orientationY, 0]}>
+      {/* top bar only - no bottom bar, so it reads as a doorway you walk into rather than a closed frame */}
+      <mesh position={[0, PORTAL_HALF_HEIGHT - PORTAL_RIM / 2, 0]} material={frameMaterial}>
+        <planeGeometry args={[PORTAL_HALF_WIDTH * 2, PORTAL_RIM]} />
+      </mesh>
+      <mesh position={[-(PORTAL_HALF_WIDTH - PORTAL_RIM / 2), 0, 0]} material={frameMaterial}>
+        <planeGeometry args={[PORTAL_RIM, PORTAL_HALF_HEIGHT * 2]} />
+      </mesh>
+      <mesh position={[PORTAL_HALF_WIDTH - PORTAL_RIM / 2, 0, 0]} material={frameMaterial}>
+        <planeGeometry args={[PORTAL_RIM, PORTAL_HALF_HEIGHT * 2]} />
+      </mesh>
+      {/* extended past the actual floor level (not just down to it) - the group sits above
+          y=0 for floor clearance, so a box exactly matching the frame height left its bottom
+          face just above the real floor's grid line texture (drawn at y=0.02), leaving a gap
+          the grid showed through. Extending only downward (top edge unchanged) closes that. */}
+      <mesh position={[0, -PORTAL_FLOOR_OVERLAP / 2, -PORTAL_VOID_DEPTH / 2]}>
+        <boxGeometry
+          args={[
+            PORTAL_HALF_WIDTH * 2 - PORTAL_RIM,
+            PORTAL_HALF_HEIGHT * 2 - PORTAL_RIM + PORTAL_FLOOR_OVERLAP,
+            PORTAL_VOID_DEPTH,
+          ]}
+        />
+        <meshBasicMaterial color="#000000" side={THREE.BackSide} />
+      </mesh>
+      <PortalParticles
+        halfWidth={PORTAL_HALF_WIDTH - PORTAL_RIM * 2}
+        halfHeight={PORTAL_HALF_HEIGHT - PORTAL_RIM * 2}
+        tipX={0}
+        tipY={PORTAL_PARTICLE_TARGET_Y}
+        tipZ={PORTAL_TIP_LOCAL_Z}
+      />
+      {/* no extra point light here - the exit already has one (see the pointLight keyed off
+          exitUnlocked further down); a second one stacked right at the doorway, next to this
+          much larger frame/void than the diamond it replaced, was almost certainly what
+          overloaded Bloom and washed the whole thing out to white */}
+    </group>
+  );
+}
+
 export function MazeBoard({
   gridWidth,
   gridHeight,
@@ -748,6 +1119,33 @@ export function MazeBoard({
   const gridSpan = Math.max(boardWidth, boardDepth);
   const [startWorldX, startWorldZ] = cellToWorld(gridWidth, gridHeight, startX, startY);
   const [exitWorldX, exitWorldZ] = cellToWorld(gridWidth, gridHeight, exitX, exitY);
+  // Exit cells are dead ends (exactly one open side, connecting to the rest of the maze -
+  // the other three sides are solid walls). The portal needs to face that specific direction
+  // (not just "which axis"), and sit at the actual doorway threshold rather than the cell
+  // center, or its open face can end up pointing into the solid dead-end wall instead of
+  // toward the player, and its black interior can overshoot past that real wall.
+  const { exitPortalOrientationY, exitPortalWorldX, exitPortalWorldZ } = useMemo(() => {
+    if (!hasMaze) {
+      return { exitPortalOrientationY: 0, exitPortalWorldX: exitWorldX, exitPortalWorldZ: exitWorldZ };
+    }
+    const mask = mazeWalls[mazeIndex(gridWidth, exitX, exitY)] ?? ALL_WALLS;
+    // (dx, dz) toward whichever neighbor cell the exit actually opens onto - i.e. the
+    // direction the player approaches from, which is also the direction the portal's open
+    // face needs to point toward.
+    let dx = 0;
+    let dz = 0;
+    if ((mask & WALL_NORTH) === 0) dz = -1;
+    else if ((mask & WALL_SOUTH) === 0) dz = 1;
+    else if ((mask & WALL_EAST) === 0) dx = 1;
+    else if ((mask & WALL_WEST) === 0) dx = -1;
+
+    const THRESHOLD_OFFSET = CELL_SIZE / 2 - 0.12; // how far from cell center out to the opening
+    return {
+      exitPortalOrientationY: Math.atan2(dx, dz),
+      exitPortalWorldX: exitWorldX + dx * THRESHOLD_OFFSET,
+      exitPortalWorldZ: exitWorldZ + dz * THRESHOLD_OFFSET,
+    };
+  }, [hasMaze, mazeWalls, gridWidth, exitX, exitY, exitWorldX, exitWorldZ]);
   const { gl, camera } = useThree();
   const currentPlayer = currentSessionId ? players.get(currentSessionId) : undefined;
   const localPositionRef = useRef<LocalPosition>({
@@ -1548,8 +1946,16 @@ export function MazeBoard({
         intensity={0.12}
         castShadow
       />
+      {/* short reach on purpose - these walls don't have shadow-casting set up, so a light
+          with too much distance shines straight through them into neighboring corridors
+          instead of staying contained near the doorway (true regardless of EXIT_VISUAL) */}
       {exitUnlocked && (
-        <pointLight position={[exitWorldX, 2.4, exitWorldZ]} color="#facc15" intensity={2.2 + playersAtExit * 1.5} distance={8 + playersAtExit * 2} />
+        <pointLight
+          position={[exitWorldX, 2.4, exitWorldZ]}
+          color={EXIT_VISUAL === "diamond" ? "#facc15" : "#7c3aed"}
+          intensity={1.8 + playersAtExit * 0.8}
+          distance={3.5 + playersAtExit * 0.75}
+        />
       )}
 
       <group>
@@ -1574,14 +1980,23 @@ export function MazeBoard({
 
         {exitUnlocked && (
           <>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[exitWorldX, 0.05, exitWorldZ]}>
-              <ringGeometry args={[0.32, 0.7, 44]} />
-              <meshBasicMaterial color="#facc15" transparent opacity={0.88} side={THREE.DoubleSide} />
-            </mesh>
-            <mesh position={[exitWorldX, 0.28, exitWorldZ]}>
-              <octahedronGeometry args={[0.38, 0]} />
-              <meshStandardMaterial color="#facc15" emissive="#f59e0b" emissiveIntensity={0.7} roughness={0.28} />
-            </mesh>
+            {EXIT_VISUAL === "diamond" ? (
+              <ExitDiamondMarker worldX={exitWorldX} worldZ={exitWorldZ} />
+            ) : (
+              <>
+                {/* floor marker leading up to the doorway, narrowing like a path toward it */}
+                <ExitPathMarker
+                  worldX={exitPortalWorldX}
+                  worldZ={exitPortalWorldZ}
+                  orientationY={exitPortalOrientationY}
+                />
+                <ExitPortal
+                  worldX={exitPortalWorldX}
+                  worldZ={exitPortalWorldZ}
+                  orientationY={exitPortalOrientationY}
+                />
+              </>
+            )}
           </>
         )}
 

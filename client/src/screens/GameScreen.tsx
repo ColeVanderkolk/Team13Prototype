@@ -322,7 +322,9 @@ export const GameScreen = ({
     useEffect(() => {
       if (stage >prevStage.current) {
         playSound("progress");
+        noiseFieldRef.current?.flash();
       }
+      prevStage.current = stage;
     }, [stage]);
 
   return (
