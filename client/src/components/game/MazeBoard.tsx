@@ -1977,6 +1977,8 @@ export function MazeBoard({
             exitWorldZ={exitWorldZ}
             wallHeight={WALL_HEIGHT}
             cellSize={CELL_SIZE}
+            wallThickness={WALL_THICKNESS}
+            orientationY={exitPortalOrientationY}
           />
         )}
 

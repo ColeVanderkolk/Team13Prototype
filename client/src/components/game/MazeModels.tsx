@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
@@ -156,32 +157,88 @@ export function FlashlightProp() {
   );
 }
 
-// the barrier that blocks the exit cell until the level's obstacle is solved — not the exit itself
+// the barrier that blocks the exit cell until the level's obstacle is solved — not the exit
+// itself. Stark white and deliberately outside the quadrant wall palette (blue/pink/amber/
+// violet - see QUADRANT_WALL_COLORS in MazeBoard.tsx), so it can never blend into whichever
+// quadrant the exit happens to land in the way its old matching-violet color once could.
+// Pulses instead of sitting at a flat brightness, so it reads as something alive/ominous up
+// close in first person, not just a differently-colored wall - the previous version only
+// stood out from a distance, via its point light's glow against the dark floor.
+//
+// The exit cell is a dead end - three of its four sides already have real, solid maze walls,
+// so there is exactly one direction a player can ever approach from or stand in. That means
+// only the face across that one direction needs to be gapless (full width, flush with the
+// corridor's own walls); the depth along the approach axis can be smaller than the cell
+// without ever exposing a peekable gap, since there is no angle to see behind or beside it
+// from anywhere a player can actually stand.
 export function ExitBarrier({
   exitWorldX,
   exitWorldZ,
   wallHeight,
   cellSize,
+  wallThickness,
+  orientationY,
 }: {
   exitWorldX: number;
   exitWorldZ: number;
   wallHeight: number;
   cellSize: number;
+  wallThickness: number;
+  orientationY: number;
 }) {
-  const position: Vec3 = [exitWorldX, wallHeight / 2, exitWorldZ];
-  const size: Vec3 = [cellSize * 0.82, wallHeight, cellSize * 0.82];
+  const localPosition: Vec3 = [0, wallHeight / 2, 0];
+  // Width matches the actual clear gap between the corridor's two side walls, not the raw
+  // cell size - the walls themselves eat into that gap by their own thickness on each side,
+  // so using the full cell size here was overshooting past their inner faces and poking out
+  // the other side, visible from outside the corridor. Shorter depth along the approach axis
+  // for a distinct, standalone "block" look rather than a flat wall panel.
+  const size: Vec3 = [cellSize - wallThickness, wallHeight, cellSize * 0.6];
+
+  const material = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: "#ffffff",
+        emissive: "#ffffff",
+        emissiveIntensity: 0.8,
+        roughness: 0.25,
+        metalness: 0.1,
+        // A standard material only renders its outward-facing side, so if the player's
+        // camera ever clips even slightly inside the box's boundary (right up against it),
+        // the inside would normally be invisible, revealing the empty cell behind it.
+        // Rendering both sides means there's no angle where anything but solid white shows.
+        side: THREE.DoubleSide,
+        // The two side faces sit exactly flush with the corridor's real walls (see size
+        // above), which on its own causes z-fighting - two surfaces competing for the same
+        // pixels. polygonOffset nudges this surface's depth priority without moving its
+        // actual position, resolving that without reopening a side gap.
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4,
+      }),
+    [],
+  );
+  useEffect(() => () => material.dispose(), [material]);
+
+  const lightRef = useRef<THREE.PointLight>(null);
+
+  useFrame((state) => {
+    const pulse = 0.65 + Math.sin(state.clock.elapsedTime * 1.6) * 0.35;
+    material.emissiveIntensity = pulse;
+    if (lightRef.current) lightRef.current.intensity = 1.4 + pulse * 0.8;
+  });
 
   return (
-    <>
+    <group position={[exitWorldX, 0, exitWorldZ]} rotation={[0, orientationY, 0]}>
       {EXIT_BARRIER_MODEL_URL ? (
-        <GltfModel url={EXIT_BARRIER_MODEL_URL} position={position} scale={size} />
+        <GltfModel url={EXIT_BARRIER_MODEL_URL} position={localPosition} scale={size} />
       ) : (
-        <mesh position={position}>
+        <mesh position={localPosition} material={material}>
           <boxGeometry args={size} />
-          <meshStandardMaterial color="#7c3aed" emissive="#4c1d95" emissiveIntensity={0.7} roughness={0.25} metalness={0.1} />
         </mesh>
       )}
-      <pointLight position={[exitWorldX, 1.5, exitWorldZ]} color="#7c3aed" intensity={1.8} distance={5} />
-    </>
+      {/* shorter reach than before (was 5) - the glow was visible far back down the corridor,
+          well before a player was anywhere near it */}
+      <pointLight ref={lightRef} position={[0, 1.5, 0]} color="#ffffff" intensity={1.8} distance={2.8} />
+    </group>
   );
 }
