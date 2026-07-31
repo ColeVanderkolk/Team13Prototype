@@ -45,7 +45,8 @@ function CollectibleSimpleObject({
 }) {
   const { scene } = useThree();
   const instanceRef = useRef<CollectibleSimple | null>(null);
-  const hasReportedRef = useRef(false);
+  const lastAttemptAtRef = useRef(0);
+  const hasNotifiedRef = useRef(false);
   const [worldX, worldZ] = useMemo(
     () => cellToWorld(gridWidth, gridHeight, collectible.x, collectible.y),
     [collectible.x, collectible.y, gridHeight, gridWidth],
@@ -55,7 +56,8 @@ function CollectibleSimpleObject({
     const instance = new CollectibleSimple(worldX, 0.5, worldZ);
     instance.addToScene(scene as any);
     instanceRef.current = instance;
-    hasReportedRef.current = false;
+    lastAttemptAtRef.current = 0;
+    hasNotifiedRef.current = false;
 
     return () => {
       // real teardown — only fires when this component itself unmounts, which now only
@@ -66,26 +68,37 @@ function CollectibleSimpleObject({
     };
   }, [scene, worldX, worldZ]);
 
-  // server-confirmed collection — covers another player picking it up first, and is also
-  // what actually lands our own pickup (the useFrame below already soft-collects it locally
-  // for instant feedback, so this is mostly a no-op safety net for our own pickups)
+  // server-confirmed collection — the ONLY thing that actually hides it. Reporting a pickup
+  // and hiding it immediately client-side (instead of waiting for this) used to mean a
+  // rejected pickup (e.g. the server's read on the player's position was a hair off from the
+  // client's own, right at the pickup radius edge) left the item invisible forever with no
+  // points ever awarded — nothing ever told the client its optimistic hide was wrong.
   useEffect(() => {
-    if (isCollected) instanceRef.current?.collect(scene as any);
-  }, [isCollected, scene]);
+    if (!isCollected) return;
+    instanceRef.current?.collect(scene as any);
+    if (!hasNotifiedRef.current) {
+      hasNotifiedRef.current = true;
+      onCollection();
+    }
+  }, [isCollected, scene, onCollection]);
 
   useFrame((_state, delta) => {
     const instance = instanceRef.current;
-    if (!instance || instance.isCollected) return;
+    if (!instance || isCollected) return;
 
     instance.update(delta);
 
     const dx = localPositionRef.current.x - collectible.x;
     const dy = localPositionRef.current.y - collectible.y;
-    if (!hasReportedRef.current && Math.hypot(dx, dy) < PICKUP_RADIUS) {
-      hasReportedRef.current = true;
-      instance.collect(scene as any);
+    const now = performance.now();
+    // Retries every 250ms while in range and not yet confirmed, instead of a single one-shot
+    // attempt - a rejected attempt (the same kind of transient position mismatch) would
+    // otherwise never be retried, silently stranding the collectible forever even though
+    // nothing hides it anymore. 250ms is frequent enough to feel instant, not so frequent it
+    // floods the server with messages the whole time you're standing near an uncollected item.
+    if (Math.hypot(dx, dy) < PICKUP_RADIUS && now - lastAttemptAtRef.current > 250) {
+      lastAttemptAtRef.current = now;
       room?.send("collect", { id: collectible.id });
-      onCollection();
     }
   });
 
@@ -170,7 +183,8 @@ function SuperCollectibleObject({
   onCollection: () => void;
 }) {
   const groupRef = useRef<THREE.Group>(null);
-  const hasReportedRef = useRef(false);
+  const lastAttemptAtRef = useRef(0);
+  const hasNotifiedRef = useRef(false);
   const floatTime = useRef(0);
   const [worldX, worldZ] = useMemo(
     () => cellToWorld(gridWidth, gridHeight, collectible.x, collectible.y),
@@ -199,10 +213,18 @@ function SuperCollectibleObject({
 
     const dx = localPositionRef.current.x - collectible.x;
     const dy = localPositionRef.current.y - collectible.y;
-    if (!hasReportedRef.current && Math.hypot(dx, dy) < PICKUP_RADIUS) {
-      hasReportedRef.current = true;
+    const now = performance.now();
+    // retries every 250ms while in range instead of a single one-shot attempt - see the
+    // matching comment in CollectibleSimpleObject above for why a one-shot attempt is risky.
+    // onCollection (the pickup sound) only fires once regardless of how many attempts it
+    // takes, so a rejected-then-retried pickup can't play the sound twice.
+    if (Math.hypot(dx, dy) < PICKUP_RADIUS && now - lastAttemptAtRef.current > 250) {
+      lastAttemptAtRef.current = now;
       room?.send("collect", { id: collectible.id });
-      onCollection();
+      if (!hasNotifiedRef.current) {
+        hasNotifiedRef.current = true;
+        onCollection();
+      }
     }
   });
 
