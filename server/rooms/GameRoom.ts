@@ -5,6 +5,7 @@ import {
     ALL_WALLS,
     generateMaze,
     getMazeSizeForStage,
+    getPathCells,
     isDeadEndCell,
     mazeIndex,
     wallForDirection,
@@ -49,6 +50,14 @@ export class GameRoom extends Room<GameState> {
     private readonly STREAK_CAP = 5;
     private readonly COLLECTIBLE_PICKUP_RADIUS = 0.7; // used for key pickup — leave as-is
     private readonly SCORE_COLLECTIBLE_RADIUS = 0.4; // tighter radius, score collectibles only
+    // Secret bonus collectible: spawns once all regular collectibles in a level are gathered.
+    // Each one's value compounds off how many have been collected so far this game (never
+    // resets between levels, only when a brand new game starts - there's no persistence
+    // beyond a single room's lifetime).
+    private readonly SUPER_COLLECTIBLE_BASE_SCORE = 200;
+    private readonly SUPER_COLLECTIBLE_GROWTH = 1.5;
+    private superCollectiblesCollectedCount = 0;
+    private superCollectibleSpawnedThisLevel = false; // resets each level in buildMazeForStage
     private isSoloMode: boolean = false;
     private isDevMode: boolean = false;
     // Last level's obstacle type, so configureLevelObjective() can avoid rolling the same one
@@ -453,15 +462,143 @@ export class GameRoom extends Room<GameState> {
         if (!player || !collectibleId) return;
 
         const index = this.state.collectibles.findIndex((collectible) => collectible.id === collectibleId);
-        if (index < 0) return;
+        if (index >= 0) {
+            const collectible = this.state.collectibles[index];
+            const distance = Math.hypot(player.x - collectible.x, player.y - collectible.y);
+            console.log(
+                `[collect] regular "${collectibleId}" - distance ${distance.toFixed(2)} (radius ${this.SCORE_COLLECTIBLE_RADIUS}), ${this.state.collectibles.length} remaining before this pickup`,
+            );
+            if (distance > this.SCORE_COLLECTIBLE_RADIUS) {
+                console.log(`[collect] rejected - too far away`);
+                return;
+            }
 
-        const collectible = this.state.collectibles[index];
-        const distance = Math.hypot(player.x - collectible.x, player.y - collectible.y);
-        if (distance > this.SCORE_COLLECTIBLE_RADIUS) return;
+            this.state.collectiblesCollectedThisLevel += 1;
+            this.state.totalScore += (collectible.score || this.COLLECTIBLE_SCORE) * this.state.scoreMultiplier;
+            this.state.collectibles.splice(index, 1);
+            console.log(`[collect] accepted - ${this.state.collectibles.length} regular collectibles remaining`);
 
-        this.state.collectiblesCollectedThisLevel += 1;
-        this.state.totalScore += (collectible.score || this.COLLECTIBLE_SCORE) * this.state.scoreMultiplier;
-        this.state.collectibles.splice(index, 1);
+            this.trySpawnSuperCollectible();
+            return;
+        }
+
+        const superIndex = this.state.superCollectibles.findIndex((collectible) => collectible.id === collectibleId);
+        if (superIndex < 0) {
+            console.log(`[collect] "${collectibleId}" not found in either list - already gone, or a stale/bad id`);
+            return;
+        }
+
+        const superCollectible = this.state.superCollectibles[superIndex];
+        const distance = Math.hypot(player.x - superCollectible.x, player.y - superCollectible.y);
+        console.log(`[collect] super "${collectibleId}" - distance ${distance.toFixed(2)} (radius ${this.SCORE_COLLECTIBLE_RADIUS})`);
+        if (distance > this.SCORE_COLLECTIBLE_RADIUS) {
+            console.log(`[collect] super rejected - too far away`);
+            return;
+        }
+
+        // score was already computed and stored at spawn time (see trySpawnSuperCollectible),
+        // so what's awarded here always matches what was actually on the object
+        this.state.totalScore += superCollectible.score * this.state.scoreMultiplier;
+        this.superCollectiblesCollectedCount += 1;
+        this.state.superCollectibles.splice(superIndex, 1);
+        console.log(
+            `[collect] super accepted - awarded ${superCollectible.score}, total super count this game: ${this.superCollectiblesCollectedCount}`,
+        );
+    }
+
+    // Spawns the single secret bonus collectible once all regular collectibles in the level
+    // are gone. Placed like regular collectibles (away from start/exit/obstacles, never in a
+    // dead end) plus one more constraint: never anywhere on the route the team actually has to
+    // walk to finish the level. That's NOT just the straight start-to-exit route - with an
+    // obstacle active, players also have to detour out to it (a plate, a key, a lever) and
+    // back before reaching the exit, so every one of those legs gets excluded too. This maze
+    // is "perfect" (exactly one route exists between any two cells), so each of these is an
+    // unambiguous, unique path - no risk of excluding the "wrong" one of several options.
+    private trySpawnSuperCollectible() {
+        if (this.superCollectibleSpawnedThisLevel) {
+            console.log("[superCollectible] skipped - already attempted this level");
+            return;
+        }
+        if (this.state.collectibles.length > 0) return;
+        if (this.state.superCollectibles.length > 0) return;
+
+        console.log("[superCollectible] all regular collectibles gone - attempting to place one, stage", this.state.stage);
+
+        const mazeWalls = Array.from(this.state.mazeWalls);
+        const obstaclePositions = this.getObstaclePositions();
+        const start = { x: this.state.startX, y: this.state.startY };
+        const exit = { x: this.state.exitX, y: this.state.exitY };
+
+        const pathCells = getPathCells(this.state.gridWidth, this.state.gridHeight, mazeWalls, start, exit);
+        for (const obstaclePos of obstaclePositions) {
+            getPathCells(this.state.gridWidth, this.state.gridHeight, mazeWalls, start, obstaclePos).forEach((c) =>
+                pathCells.add(c),
+            );
+            getPathCells(this.state.gridWidth, this.state.gridHeight, mazeWalls, obstaclePos, exit).forEach((c) =>
+                pathCells.add(c),
+            );
+        }
+
+        const MIN_DIST_FROM_OBSTACLE = 2;
+        // A player is always standing right where they just picked up the last regular
+        // collectible - spawning on top of (or right next to) them meant the client's own
+        // pickup-radius check auto-collected it within a frame or two, before it was ever
+        // actually visible. This keeps it well clear of every player's live position, not
+        // just that one cell, so the same thing can't happen with a second/third player either.
+        const MIN_DIST_FROM_PLAYER = 3;
+        const playerPositions = Array.from(this.state.players.values()).map((p) => ({ x: p.x, y: p.y }));
+        const candidates: Array<{ x: number; y: number; rank: number }> = [];
+
+        for (let y = 0; y < this.state.gridHeight; y++) {
+            for (let x = 0; x < this.state.gridWidth; x++) {
+                if (pathCells.has(`${x},${y}`)) continue;
+                if (isDeadEndCell(this.state.gridWidth, this.state.gridHeight, mazeWalls, x, y)) continue;
+
+                const distanceFromStart = Math.abs(x - this.state.startX) + Math.abs(y - this.state.startY);
+                const distanceFromExit = Math.abs(x - this.state.exitX) + Math.abs(y - this.state.exitY);
+                if (distanceFromStart < 3 || distanceFromExit < 2) continue;
+
+                const tooCloseToObstacle = obstaclePositions.some(
+                    (o) => Math.abs(x - o.x) + Math.abs(y - o.y) < MIN_DIST_FROM_OBSTACLE,
+                );
+                if (tooCloseToObstacle) continue;
+
+                const tooCloseToPlayer = playerPositions.some(
+                    (p) => Math.abs(x - p.x) + Math.abs(y - p.y) < MIN_DIST_FROM_PLAYER,
+                );
+                if (tooCloseToPlayer) continue;
+
+                candidates.push({ x, y, rank: this.hashCell(x, y) });
+            }
+        }
+
+        // marked "spawned" regardless of whether a valid spot was found, so a too-small/too-
+        // linear maze with no valid off-path cell just skips it for the level instead of
+        // retrying on every subsequent regular pickup (there won't be any more this level anyway)
+        this.superCollectibleSpawnedThisLevel = true;
+        if (candidates.length === 0) {
+            console.log(
+                `[superCollectible] no valid cell found (grid ${this.state.gridWidth}x${this.state.gridHeight}, ` +
+                    `${obstaclePositions.length} obstacle position(s), ${pathCells.size} cells excluded as "on the route") - skipping this level`,
+            );
+            return;
+        }
+
+        candidates.sort((a, b) => a.rank - b.rank);
+        const cell = candidates[0];
+
+        const collectible = new Collectible();
+        collectible.id = `stage-${this.state.stage}-super-${cell.x}-${cell.y}`;
+        collectible.x = cell.x;
+        collectible.y = cell.y;
+        collectible.score =
+            this.SUPER_COLLECTIBLE_BASE_SCORE * Math.pow(this.SUPER_COLLECTIBLE_GROWTH, this.superCollectiblesCollectedCount);
+
+        console.log(`[superCollectible] spawned at (${cell.x}, ${cell.y}), worth ${collectible.score}`);
+
+        const superCollectibles = new ArraySchema<Collectible>();
+        superCollectibles.push(collectible);
+        this.state.superCollectibles = superCollectibles;
     }
 
     private handlePosition(client: Client, message: PositionMessage) {
@@ -503,6 +640,10 @@ export class GameRoom extends Room<GameState> {
         this.state.exitY = maze.exitY;
         this.state.mazeWalls = mazeWalls;
         this.state.graffiti.clear();
+        // per-level only - superCollectiblesCollectedCount is NOT reset here, it persists for
+        // the whole game (see trySpawnSuperCollectible)
+        this.state.superCollectibles = new ArraySchema<Collectible>();
+        this.superCollectibleSpawnedThisLevel = false;
         this.configureLevelObjective();
     }
 

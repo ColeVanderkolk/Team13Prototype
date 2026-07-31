@@ -3,7 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useTexture } from "@react-three/drei";
 import type * as Client from "colyseus.js";
 import * as THREE from "three";
-import { MazeCollectibles } from "./MazeCollectibles";
+import { MazeCollectibles, SuperMazeCollectible } from "./MazeCollectibles";
 import { ExitBarrier, FlashlightProp, MazePlayerAvatar, MazeWallPiece, USE_CUSTOM_WALL_MODELS, HAS_WALL_MODEL } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
 import { Levers } from "./Levers";
@@ -173,6 +173,7 @@ interface MazeBoardProps {
   exitUnlocked: boolean;
   seed: number;
   collectibles: MazeCollectible[];
+  superCollectibles: MazeCollectible[];
   players: Map<string, MazePlayer>;
   room: Client.Room | null;
   countdown?: number;
@@ -1071,6 +1072,7 @@ export function MazeBoard({
   exitUnlocked,
   seed,
   collectibles,
+  superCollectibles,
   players,
   room,
   countdown,
@@ -2052,6 +2054,14 @@ export function MazeBoard({
           room={room}
           onCollection={() => playSound("collect")}
           seed={seed}
+        />
+        <SuperMazeCollectible
+          superCollectibles={superCollectibles}
+          gridWidth={gridWidth}
+          gridHeight={gridHeight}
+          localPositionRef={localPositionRef}
+          room={room}
+          onCollection={() => playSound("key")}
         />
 
         {orderedPlayers.map(([sessionId, player]) => (

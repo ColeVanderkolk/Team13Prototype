@@ -83,6 +83,7 @@ interface ServerGameState {
     isGameOver: boolean;
     timeRemaining: number;
     collectibles: Map<string, Collectible>;
+    superCollectibles: Map<string, Collectible>;
     stage: number;
     seed: number;
     playerCount: number;
@@ -130,6 +131,7 @@ interface GameStateLocal {
   leverWallDir: number[];
   players: Map<string, PlayerState>;
   collectibles: Collectible[];
+  superCollectibles: Collectible[];
   totalScore: number;
   gameStarted: boolean;
   stage: number;
@@ -184,6 +186,7 @@ const initialGameState: GameStateLocal = {
     leverWallDir: [],
     players: new Map(),
     collectibles: [],
+    superCollectibles: [],
     totalScore: 0,
     gameStarted: false,
     stage: 1,
@@ -298,6 +301,16 @@ const Index = () => {
       });
     });
 
+    const newSuperCollectibles: Collectible[] = [];
+    gameRoom.state.superCollectibles?.forEach((collectible) => {
+      newSuperCollectibles.push({
+          x: collectible.x,
+          y: collectible.y,
+          id: collectible.id,
+          score: collectible.score || 0,
+      });
+    });
+
     const mazeWalls: number[] = [];
     gameRoom.state.mazeWalls?.forEach((wallMask) => mazeWalls.push(wallMask));
 
@@ -352,6 +365,7 @@ const Index = () => {
           seed: gameRoom.state.seed || 0,
           players: newPlayers,
           collectibles: newCollectibles,
+          superCollectibles: newSuperCollectibles,
           isGameOver: gameRoom.state.isGameOver || false,
           timeRemaining: gameRoom.state.timeRemaining ?? 30 * 60,
           stageThresholds: [],
@@ -717,6 +731,7 @@ const Index = () => {
         exitY={gameState.exitY}
         exitUnlocked={gameState.exitUnlocked}
         collectibles={gameState.collectibles}
+        superCollectibles={gameState.superCollectibles}
         totalScore={gameState.totalScore}
         stage={gameState.stage}
         timeRemaining={gameState.timeRemaining}

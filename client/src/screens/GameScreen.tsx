@@ -98,7 +98,8 @@ interface GameScreenProps {
     exitY: number;
     exitUnlocked: boolean;
     collectibles: Collectible[];
-    totalScore: number; 
+    superCollectibles: Collectible[];
+    totalScore: number;
     stage: number;
     timeRemaining: number; 
     seed: number;
@@ -226,6 +227,7 @@ export const GameScreen = ({
     exitY,
     exitUnlocked,
     collectibles,
+    superCollectibles,
     totalScore,
     stage,
     timeRemaining,
@@ -800,6 +802,7 @@ export const GameScreen = ({
           exitUnlocked={exitUnlocked}
           seed={seed}
           collectibles={collectibles}
+          superCollectibles={superCollectibles}
           players={players}
           room={room}
           countdown={countdown}

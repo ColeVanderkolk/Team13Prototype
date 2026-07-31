@@ -87,6 +87,11 @@ export class GameState extends Schema {
 
     @type([Collectible]) collectibles = new ArraySchema<Collectible>();
 
+    // Secret bonus collectible - 0 or 1 entries. Spawns once all regular collectibles in the
+    // level are gathered; kept fully separate from `collectibles` so it can't affect the
+    // streak-scoring math above (collectiblesSpawnedThisLevel/collectiblesCollectedThisLevel).
+    @type([Collectible]) superCollectibles = new ArraySchema<Collectible>();
+
     @type("number") totalScore: number = 0;
 
     @type("boolean") gameStarted: boolean = false;
