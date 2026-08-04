@@ -2262,6 +2262,7 @@ export function MazeBoard({
             pressurePlatesRequired={pressurePlatesRequired}
             obstacleType={obstacleType}
             keysCollectedMask={keysCollectedMask}
+            exitUnlocked={exitUnlocked}
             onPlateActivated = {() => playSound("plate")}
           />
         )}
