@@ -1246,6 +1246,8 @@ export function MazeBoard({
   const pendingCounterRef = useRef(0);
 
   const prevLeversPulledInOrderRef = useRef(leversPulledInOrder);
+  const prevConvergePlatesCompletedMaskRef = useRef(convergePlatesCompletedMask);
+  const prevLinkedLeversLitMaskRef = useRef(linkedLeversLitMask);
   const drawSoundRef = useRef<HTMLAudioElement | null>(null);
 
   // Which linked lever was just pulled (right owner or not) and a counter that increments on
@@ -1292,6 +1294,25 @@ export function MazeBoard({
     }
     prevLeversPulledInOrderRef.current = leversPulledInOrder;
   }, [leversPulledInOrder]);
+
+  // convergePlates: a plate only ever locks in (bits only ever get set, never cleared - see
+  // GameRoom.ts), so any change here is a genuine new lock-in, never a false trigger from
+  // someone stepping off.
+  useEffect(() => {
+    if (convergePlatesCompletedMask !== prevConvergePlatesCompletedMaskRef.current) {
+      playSound("plate");
+    }
+    prevConvergePlatesCompletedMaskRef.current = convergePlatesCompletedMask;
+  }, [convergePlatesCompletedMask]);
+
+  // linkedLevers: any change (light turning on OR off) is a real, server-confirmed toggle -
+  // a wrong-owner pull never changes this mask at all, so no extra guarding is needed here.
+  useEffect(() => {
+    if (linkedLeversLitMask !== prevLinkedLeversLitMaskRef.current) {
+      playSound("lightSwitch");
+    }
+    prevLinkedLeversLitMaskRef.current = linkedLeversLitMask;
+  }, [linkedLeversLitMask]);
 
 
   // Mirror the server's graffiti strokes into local state whenever the room state changes
