@@ -17,6 +17,45 @@ export class Collectible extends Schema {
     @type("number") score: number = 0; 
 }
 
+// Nested (not flattened into GameState) because a Schema class can only hold 64 @type
+// fields, and GameState was already right at that ceiling — every nested Schema gets its
+// own separate 64-field budget, so this is the fix rather than trimming fields elsewhere.
+//
+// A real Lights Out puzzle: 6 levers (labeled A-F, indices 0-5) wired together per
+// LINKED_LEVER_TOGGLE_SETS in GameRoom.ts - a randomly-searched graph (not a simple grid),
+// chosen because it has exactly ONE winning combination in the entire 64-state space
+// (verified by brute force), so there's no shortcut like "everyone pull once" or "everyone
+// pull their same side". Column i (levers {i, i+3}) is owned by player slot columnOwner[i] -
+// a random permutation of the 3 slots, re-rolled every level, so who ends up needing to pull
+// both of their levers vs. just one isn't a fixed pattern across playthroughs. The wiring
+// itself never changes (same as the real toy never changing its wiring); only where the
+// levers physically sit AND who owns which column do.
+export class LinkedLeversState extends Schema {
+    @type("number") lever0X: number = -1;
+    @type("number") lever0Y: number = -1;
+    @type("number") lever0WallDir: number = 0;
+    @type("number") lever1X: number = -1;
+    @type("number") lever1Y: number = -1;
+    @type("number") lever1WallDir: number = 0;
+    @type("number") lever2X: number = -1;
+    @type("number") lever2Y: number = -1;
+    @type("number") lever2WallDir: number = 0;
+    @type("number") lever3X: number = -1;
+    @type("number") lever3Y: number = -1;
+    @type("number") lever3WallDir: number = 0;
+    @type("number") lever4X: number = -1;
+    @type("number") lever4Y: number = -1;
+    @type("number") lever4WallDir: number = 0;
+    @type("number") lever5X: number = -1;
+    @type("number") lever5Y: number = -1;
+    @type("number") lever5WallDir: number = 0;
+    @type("number") litMask: number = 0;
+    // columnOwnerN = which player slot (0-2) owns grid column N (levers N and N+3)
+    @type("number") columnOwner0: number = 0;
+    @type("number") columnOwner1: number = 1;
+    @type("number") columnOwner2: number = 2;
+}
+
 export class GraffitiStroke extends Schema {
     @type("string") wallKey: string = "";
     @type("string") sessionId: string = "";
@@ -97,6 +136,11 @@ export class GameState extends Schema {
     @type("number") convergePlate2Y: number = -1;
     @type("number") convergePlatesCompletedMask: number = 0;
     @type(["number"]) convergePlateCompletionOrder = new ArraySchema<number>();
+
+    // linked levers: a 6-lever Lights Out puzzle, two per player slot (multiplayer only -
+    // solo mode drops the ownership lock so the lone player can pull any of them). See
+    // LinkedLeversState for the grid/adjacency details.
+    @type(LinkedLeversState) linkedLevers = new LinkedLeversState();
 
     @type([Collectible]) collectibles = new ArraySchema<Collectible>();
 

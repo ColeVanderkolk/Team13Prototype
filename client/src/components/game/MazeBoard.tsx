@@ -8,6 +8,7 @@ import { ExitBarrier, ExitProgressTriangle, FlashlightProp, MazePlayerAvatar, Ma
 import { PressurePlates } from "./PressurePlates";
 import { ConvergePlates } from "./ConvergePlates";
 import { Levers } from "./Levers";
+import { LinkedLevers } from "./LinkedLevers";
 import { Keys } from "./Keys";
 import { useSounds } from "@/hooks/use-sounds";
 
@@ -219,6 +220,29 @@ interface MazeBoardProps {
   convergePlate2Y: number;
   convergePlatesCompletedMask: number;
   convergePlateCompletionOrder: number[];
+
+  linkedLever0X: number;
+  linkedLever0Y: number;
+  linkedLever0WallDir: number;
+  linkedLever1X: number;
+  linkedLever1Y: number;
+  linkedLever1WallDir: number;
+  linkedLever2X: number;
+  linkedLever2Y: number;
+  linkedLever2WallDir: number;
+  linkedLever3X: number;
+  linkedLever3Y: number;
+  linkedLever3WallDir: number;
+  linkedLever4X: number;
+  linkedLever4Y: number;
+  linkedLever4WallDir: number;
+  linkedLever5X: number;
+  linkedLever5Y: number;
+  linkedLever5WallDir: number;
+  linkedLeversLitMask: number;
+  linkedLeversColumnOwner0: number;
+  linkedLeversColumnOwner1: number;
+  linkedLeversColumnOwner2: number;
 
   compassYawRef: MutableRefObject<number | null>;
   leverInRangeRef?: MutableRefObject<boolean>;
@@ -1126,6 +1150,29 @@ export function MazeBoard({
   convergePlatesCompletedMask,
   convergePlateCompletionOrder,
 
+  linkedLever0X,
+  linkedLever0Y,
+  linkedLever0WallDir,
+  linkedLever1X,
+  linkedLever1Y,
+  linkedLever1WallDir,
+  linkedLever2X,
+  linkedLever2Y,
+  linkedLever2WallDir,
+  linkedLever3X,
+  linkedLever3Y,
+  linkedLever3WallDir,
+  linkedLever4X,
+  linkedLever4Y,
+  linkedLever4WallDir,
+  linkedLever5X,
+  linkedLever5Y,
+  linkedLever5WallDir,
+  linkedLeversLitMask,
+  linkedLeversColumnOwner0,
+  linkedLeversColumnOwner1,
+  linkedLeversColumnOwner2,
+
   compassYawRef,
   leverInRangeRef,
   disabled = false,
@@ -1195,11 +1242,28 @@ export function MazeBoard({
   const prevLeversPulledInOrderRef = useRef(leversPulledInOrder);
   const drawSoundRef = useRef<HTMLAudioElement | null>(null);
 
+  // Which linked lever was just pulled (right owner or not) and a counter that increments on
+  // every attempt - drives the decoy handle-dip animation in LinkedLevers.tsx, which needs to
+  // play for EVERY pull attempt (so a wrong-owner pull doesn't look like a dead, broken lever),
+  // even though only the right owner's pull actually changes the lit state server-side.
+  const [linkedLeverPullAttempt, setLinkedLeverPullAttempt] = useState({ index: -1, key: 0 });
+
   // Kept in sync every render (not inside an effect) so the long-lived keydown listener
   // below can always read this level's actual lever positions through the ref, instead of
   // closing over the leverCellX/leverCellY props directly and going stale after a level change.
   const leverPositionsRef = useRef({ cellX: leverCellX, cellY: leverCellY, wallDir: leverWallDir });
   leverPositionsRef.current = { cellX: leverCellX, cellY: leverCellY, wallDir: leverWallDir };
+
+  // Same idea as leverPositionsRef, for the "linkedLevers" obstacle's 3 fixed lever slots -
+  // findFacingLeverIndex is generic over any cellX/cellY/wallDir arrays, so it's reused as-is.
+  const linkedLeverCellX = [linkedLever0X, linkedLever1X, linkedLever2X, linkedLever3X, linkedLever4X, linkedLever5X];
+  const linkedLeverCellY = [linkedLever0Y, linkedLever1Y, linkedLever2Y, linkedLever3Y, linkedLever4Y, linkedLever5Y];
+  const linkedLeverWallDir = [
+    linkedLever0WallDir, linkedLever1WallDir, linkedLever2WallDir,
+    linkedLever3WallDir, linkedLever4WallDir, linkedLever5WallDir,
+  ];
+  const linkedLeverPositionsRef = useRef({ cellX: linkedLeverCellX, cellY: linkedLeverCellY, wallDir: linkedLeverWallDir });
+  linkedLeverPositionsRef.current = { cellX: linkedLeverCellX, cellY: linkedLeverCellY, wallDir: linkedLeverWallDir };
 
   // Wipe local-only, not-yet-confirmed graffiti state on every level change. Without this,
   // a stroke drawn in the last ~1.5s before the level advances stays in pendingStrokes (or
@@ -1510,9 +1574,25 @@ export function MazeBoard({
             wallDir,
           );
 
-          if (leverIndex === -1) return;
+          if (leverIndex !== -1) {
+            room?.send("pullLever");
+            return;
+          }
 
-          room?.send("pullLever");
+          const linked = linkedLeverPositionsRef.current;
+          const linkedLeverIndex = findFacingLeverIndex(
+            localPositionRef.current.x,
+            localPositionRef.current.y,
+            fpYawRef.current,
+            linked.cellX,
+            linked.cellY,
+            linked.wallDir,
+          );
+
+          if (linkedLeverIndex === -1) return;
+
+          setLinkedLeverPullAttempt((prev) => ({ index: linkedLeverIndex, key: prev.key + 1 }));
+          room?.send("pullLinkedLever");
         }
         return;
       }
@@ -1862,9 +1942,12 @@ export function MazeBoard({
     if (leverInRangeRef) {
       const { x: px, y: py } = localPositionRef.current;
       const { cellX, cellY, wallDir } = leverPositionsRef.current;
+      const linked = linkedLeverPositionsRef.current;
       leverInRangeRef.current =
-        obstacleType === "levers" &&
-        findFacingLeverIndex(px, py, fpYawRef.current, cellX, cellY, wallDir) !== -1;
+        (obstacleType === "levers" &&
+          findFacingLeverIndex(px, py, fpYawRef.current, cellX, cellY, wallDir) !== -1) ||
+        (obstacleType === "linkedLevers" &&
+          findFacingLeverIndex(px, py, fpYawRef.current, linked.cellX, linked.cellY, linked.wallDir) !== -1);
     }
 
     if (!room || !currentPlayer || !hasMaze || countdown > 0) return;
@@ -2176,6 +2259,25 @@ export function MazeBoard({
             gridWidth={gridWidth}
             gridHeight={gridHeight}
             completedMask={convergePlatesCompletedMask}
+          />
+        )}
+
+        {obstacleType === "linkedLevers" && (
+          <LinkedLevers
+            levers={[
+              { cellX: linkedLever0X, cellY: linkedLever0Y, wallDir: linkedLever0WallDir },
+              { cellX: linkedLever1X, cellY: linkedLever1Y, wallDir: linkedLever1WallDir },
+              { cellX: linkedLever2X, cellY: linkedLever2Y, wallDir: linkedLever2WallDir },
+              { cellX: linkedLever3X, cellY: linkedLever3Y, wallDir: linkedLever3WallDir },
+              { cellX: linkedLever4X, cellY: linkedLever4Y, wallDir: linkedLever4WallDir },
+              { cellX: linkedLever5X, cellY: linkedLever5Y, wallDir: linkedLever5WallDir },
+            ]}
+            columnOwner={[linkedLeversColumnOwner0, linkedLeversColumnOwner1, linkedLeversColumnOwner2]}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            litMask={linkedLeversLitMask}
+            pullAttemptIndex={linkedLeverPullAttempt.index}
+            pullAttemptKey={linkedLeverPullAttempt.key}
           />
         )}
       </group>

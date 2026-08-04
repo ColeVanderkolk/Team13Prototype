@@ -87,6 +87,31 @@ interface ServerGameState {
     convergePlatesCompletedMask: number;
     convergePlateCompletionOrder: { forEach: (callback: (value: number) => void) => void };
 
+    linkedLevers: {
+        lever0X: number;
+        lever0Y: number;
+        lever0WallDir: number;
+        lever1X: number;
+        lever1Y: number;
+        lever1WallDir: number;
+        lever2X: number;
+        lever2Y: number;
+        lever2WallDir: number;
+        lever3X: number;
+        lever3Y: number;
+        lever3WallDir: number;
+        lever4X: number;
+        lever4Y: number;
+        lever4WallDir: number;
+        lever5X: number;
+        lever5Y: number;
+        lever5WallDir: number;
+        litMask: number;
+        columnOwner0: number;
+        columnOwner1: number;
+        columnOwner2: number;
+    };
+
     totalScore: number;
     gameStarted: boolean;
     countdown: number;
@@ -148,6 +173,29 @@ interface GameStateLocal {
   convergePlate2Y: number;
   convergePlatesCompletedMask: number;
   convergePlateCompletionOrder: number[];
+
+  linkedLever0X: number;
+  linkedLever0Y: number;
+  linkedLever0WallDir: number;
+  linkedLever1X: number;
+  linkedLever1Y: number;
+  linkedLever1WallDir: number;
+  linkedLever2X: number;
+  linkedLever2Y: number;
+  linkedLever2WallDir: number;
+  linkedLever3X: number;
+  linkedLever3Y: number;
+  linkedLever3WallDir: number;
+  linkedLever4X: number;
+  linkedLever4Y: number;
+  linkedLever4WallDir: number;
+  linkedLever5X: number;
+  linkedLever5Y: number;
+  linkedLever5WallDir: number;
+  linkedLeversLitMask: number;
+  linkedLeversColumnOwner0: number;
+  linkedLeversColumnOwner1: number;
+  linkedLeversColumnOwner2: number;
 
   players: Map<string, PlayerState>;
   collectibles: Collectible[];
@@ -213,6 +261,29 @@ const initialGameState: GameStateLocal = {
     convergePlate2Y: -1,
     convergePlatesCompletedMask: 0,
     convergePlateCompletionOrder: [],
+
+    linkedLever0X: -1,
+    linkedLever0Y: -1,
+    linkedLever0WallDir: 0,
+    linkedLever1X: -1,
+    linkedLever1Y: -1,
+    linkedLever1WallDir: 0,
+    linkedLever2X: -1,
+    linkedLever2Y: -1,
+    linkedLever2WallDir: 0,
+    linkedLever3X: -1,
+    linkedLever3Y: -1,
+    linkedLever3WallDir: 0,
+    linkedLever4X: -1,
+    linkedLever4Y: -1,
+    linkedLever4WallDir: 0,
+    linkedLever5X: -1,
+    linkedLever5Y: -1,
+    linkedLever5WallDir: 0,
+    linkedLeversLitMask: 0,
+    linkedLeversColumnOwner0: 0,
+    linkedLeversColumnOwner1: 1,
+    linkedLeversColumnOwner2: 2,
 
     players: new Map(),
     collectibles: [],
@@ -401,6 +472,29 @@ const Index = () => {
           convergePlate2Y: gameRoom.state.convergePlate2Y ?? -1,
           convergePlatesCompletedMask: gameRoom.state.convergePlatesCompletedMask || 0,
           convergePlateCompletionOrder,
+
+          linkedLever0X: gameRoom.state.linkedLevers?.lever0X ?? -1,
+          linkedLever0Y: gameRoom.state.linkedLevers?.lever0Y ?? -1,
+          linkedLever0WallDir: gameRoom.state.linkedLevers?.lever0WallDir || 0,
+          linkedLever1X: gameRoom.state.linkedLevers?.lever1X ?? -1,
+          linkedLever1Y: gameRoom.state.linkedLevers?.lever1Y ?? -1,
+          linkedLever1WallDir: gameRoom.state.linkedLevers?.lever1WallDir || 0,
+          linkedLever2X: gameRoom.state.linkedLevers?.lever2X ?? -1,
+          linkedLever2Y: gameRoom.state.linkedLevers?.lever2Y ?? -1,
+          linkedLever2WallDir: gameRoom.state.linkedLevers?.lever2WallDir || 0,
+          linkedLever3X: gameRoom.state.linkedLevers?.lever3X ?? -1,
+          linkedLever3Y: gameRoom.state.linkedLevers?.lever3Y ?? -1,
+          linkedLever3WallDir: gameRoom.state.linkedLevers?.lever3WallDir || 0,
+          linkedLever4X: gameRoom.state.linkedLevers?.lever4X ?? -1,
+          linkedLever4Y: gameRoom.state.linkedLevers?.lever4Y ?? -1,
+          linkedLever4WallDir: gameRoom.state.linkedLevers?.lever4WallDir || 0,
+          linkedLever5X: gameRoom.state.linkedLevers?.lever5X ?? -1,
+          linkedLever5Y: gameRoom.state.linkedLevers?.lever5Y ?? -1,
+          linkedLever5WallDir: gameRoom.state.linkedLevers?.lever5WallDir || 0,
+          linkedLeversLitMask: gameRoom.state.linkedLevers?.litMask || 0,
+          linkedLeversColumnOwner0: gameRoom.state.linkedLevers?.columnOwner0 ?? 0,
+          linkedLeversColumnOwner1: gameRoom.state.linkedLevers?.columnOwner1 ?? 1,
+          linkedLeversColumnOwner2: gameRoom.state.linkedLevers?.columnOwner2 ?? 2,
 
           totalScore: gameRoom.state.totalScore || 0,
           gameStarted: gameRoom.state.gameStarted || false,
@@ -811,6 +905,28 @@ const Index = () => {
         convergePlate2Y={gameState.convergePlate2Y}
         convergePlatesCompletedMask={gameState.convergePlatesCompletedMask}
         convergePlateCompletionOrder={gameState.convergePlateCompletionOrder}
+        linkedLever0X={gameState.linkedLever0X}
+        linkedLever0Y={gameState.linkedLever0Y}
+        linkedLever0WallDir={gameState.linkedLever0WallDir}
+        linkedLever1X={gameState.linkedLever1X}
+        linkedLever1Y={gameState.linkedLever1Y}
+        linkedLever1WallDir={gameState.linkedLever1WallDir}
+        linkedLever2X={gameState.linkedLever2X}
+        linkedLever2Y={gameState.linkedLever2Y}
+        linkedLever2WallDir={gameState.linkedLever2WallDir}
+        linkedLever3X={gameState.linkedLever3X}
+        linkedLever3Y={gameState.linkedLever3Y}
+        linkedLever3WallDir={gameState.linkedLever3WallDir}
+        linkedLever4X={gameState.linkedLever4X}
+        linkedLever4Y={gameState.linkedLever4Y}
+        linkedLever4WallDir={gameState.linkedLever4WallDir}
+        linkedLever5X={gameState.linkedLever5X}
+        linkedLever5Y={gameState.linkedLever5Y}
+        linkedLever5WallDir={gameState.linkedLever5WallDir}
+        linkedLeversLitMask={gameState.linkedLeversLitMask}
+        linkedLeversColumnOwner0={gameState.linkedLeversColumnOwner0}
+        linkedLeversColumnOwner1={gameState.linkedLeversColumnOwner1}
+        linkedLeversColumnOwner2={gameState.linkedLeversColumnOwner2}
         keysRequired={gameState.keysRequired}
         key0X={gameState.key0X}
         key0Y={gameState.key0Y}

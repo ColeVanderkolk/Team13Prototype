@@ -145,6 +145,28 @@ interface GameScreenProps {
     convergePlate2Y: number;
     convergePlatesCompletedMask: number;
     convergePlateCompletionOrder: number[];
+    linkedLever0X: number;
+    linkedLever0Y: number;
+    linkedLever0WallDir: number;
+    linkedLever1X: number;
+    linkedLever1Y: number;
+    linkedLever1WallDir: number;
+    linkedLever2X: number;
+    linkedLever2Y: number;
+    linkedLever2WallDir: number;
+    linkedLever3X: number;
+    linkedLever3Y: number;
+    linkedLever3WallDir: number;
+    linkedLever4X: number;
+    linkedLever4Y: number;
+    linkedLever4WallDir: number;
+    linkedLever5X: number;
+    linkedLever5Y: number;
+    linkedLever5WallDir: number;
+    linkedLeversLitMask: number;
+    linkedLeversColumnOwner0: number;
+    linkedLeversColumnOwner1: number;
+    linkedLeversColumnOwner2: number;
 }
 
 /** Horizontal slider styled to match the in-game score bar (cyan frame + navy→white gradient fill). */
@@ -281,6 +303,28 @@ export const GameScreen = ({
     convergePlate2Y,
     convergePlatesCompletedMask,
     convergePlateCompletionOrder,
+    linkedLever0X,
+    linkedLever0Y,
+    linkedLever0WallDir,
+    linkedLever1X,
+    linkedLever1Y,
+    linkedLever1WallDir,
+    linkedLever2X,
+    linkedLever2Y,
+    linkedLever2WallDir,
+    linkedLever3X,
+    linkedLever3Y,
+    linkedLever3WallDir,
+    linkedLever4X,
+    linkedLever4Y,
+    linkedLever4WallDir,
+    linkedLever5X,
+    linkedLever5Y,
+    linkedLever5WallDir,
+    linkedLeversLitMask,
+    linkedLeversColumnOwner0,
+    linkedLeversColumnOwner1,
+    linkedLeversColumnOwner2,
 }: GameScreenProps) => {
     const pendingInputsRef = useRef<Map<number, { x: number, y: number }>>(new Map());
     const seqCounterRef = useRef(0);
@@ -854,6 +898,28 @@ export const GameScreen = ({
           convergePlate2Y={convergePlate2Y}
           convergePlatesCompletedMask={convergePlatesCompletedMask}
           convergePlateCompletionOrder={convergePlateCompletionOrder}
+          linkedLever0X={linkedLever0X}
+          linkedLever0Y={linkedLever0Y}
+          linkedLever0WallDir={linkedLever0WallDir}
+          linkedLever1X={linkedLever1X}
+          linkedLever1Y={linkedLever1Y}
+          linkedLever1WallDir={linkedLever1WallDir}
+          linkedLever2X={linkedLever2X}
+          linkedLever2Y={linkedLever2Y}
+          linkedLever2WallDir={linkedLever2WallDir}
+          linkedLever3X={linkedLever3X}
+          linkedLever3Y={linkedLever3Y}
+          linkedLever3WallDir={linkedLever3WallDir}
+          linkedLever4X={linkedLever4X}
+          linkedLever4Y={linkedLever4Y}
+          linkedLever4WallDir={linkedLever4WallDir}
+          linkedLever5X={linkedLever5X}
+          linkedLever5Y={linkedLever5Y}
+          linkedLever5WallDir={linkedLever5WallDir}
+          linkedLeversLitMask={linkedLeversLitMask}
+          linkedLeversColumnOwner0={linkedLeversColumnOwner0}
+          linkedLeversColumnOwner1={linkedLeversColumnOwner1}
+          linkedLeversColumnOwner2={linkedLeversColumnOwner2}
           onWrongPull={() => playSound("error")}
           compassYawRef={compassYawRef}
           leverInRangeRef={leverInRangeRef}

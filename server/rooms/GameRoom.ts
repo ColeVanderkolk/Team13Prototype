@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { ArraySchema } from "@colyseus/schema";
-import { Collectible, GameState, GraffitiStroke, Player } from "../schema/GameState";
+import { Collectible, GameState, GraffitiStroke, LinkedLeversState, Player } from "../schema/GameState";
 import {
     ALL_WALLS,
     generateMaze,
@@ -63,6 +63,10 @@ export class GameRoom extends Room<GameState> {
     // Last level's obstacle type, so configureLevelObjective() can avoid rolling the same one
     // twice in a row. Null on the very first level — nothing to avoid repeating yet.
     private previousObstacleType: string | null = null;
+    // add more strings here later when new obstacle types are built
+    private readonly OBSTACLE_POOL = ["pressurePlates", "keys", "levers", "convergePlates", "linkedLevers"];
+    // Dev-only override set via the "devSetObstacleType" message - see configureLevelObjective.
+    private devForcedObstacleType: string | null = null;
     private gameStartTime: number = 0;
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
@@ -126,6 +130,10 @@ export class GameRoom extends Room<GameState> {
             this.handlePullLever(client);
         });
 
+        this.onMessage("pullLinkedLever", (client) => {
+            this.handlePullLinkedLever(client);
+        });
+
         this.onMessage("collectKey", (client, message: {index?: number}) => {
             this.handleCollectKey(client, message);
         });
@@ -134,6 +142,17 @@ export class GameRoom extends Room<GameState> {
             if (!this.isDevMode) return;
             if (!this.state.players.has(client.sessionId)) return;
             this.advanceLevel();
+        });
+
+        // Dev-only: force which obstacle type the NEXT configured level uses, instead of the
+        // usual random pick - lets a specific obstacle be tested without waiting on rotation.
+        // Persists across levels until cleared (send type: null) so repeat-testing doesn't
+        // require re-selecting it every time.
+        this.onMessage("devSetObstacleType", (client, message: { type?: string | null }) => {
+            if (!this.isDevMode) return;
+            if (!this.state.players.has(client.sessionId)) return;
+            const type = message?.type;
+            this.devForcedObstacleType = type && this.OBSTACLE_POOL.includes(type) ? type : null;
         });
 
         // handle abandon game vote
@@ -402,6 +421,19 @@ export class GameRoom extends Room<GameState> {
                 { x: this.state.convergePlate2X, y: this.state.convergePlate2Y },
             ];
             for (const p of plates) if (p.x >= 0) positions.push(p);
+        }
+
+        if (this.state.obstacleType === "linkedLevers") {
+            const lv = this.state.linkedLevers;
+            const levers = [
+                { x: lv.lever0X, y: lv.lever0Y },
+                { x: lv.lever1X, y: lv.lever1Y },
+                { x: lv.lever2X, y: lv.lever2Y },
+                { x: lv.lever3X, y: lv.lever3Y },
+                { x: lv.lever4X, y: lv.lever4Y },
+                { x: lv.lever5X, y: lv.lever5Y },
+            ];
+            for (const l of levers) if (l.x >= 0) positions.push(l);
         }
 
         return positions;
@@ -859,16 +891,18 @@ export class GameRoom extends Room<GameState> {
         this.state.convergePlateCompletionOrder = new ArraySchema<number>();
         this.convergePlatesUnlockedAt = null;
 
+        this.state.linkedLevers = new LinkedLeversState();
+
         this.state.exitUnlocked = false;
         this.state.playersAtExit = 0;
 
         // pick one obstacle type randomly from the pool each level, never the same one twice
-        // in a row — add more strings here later when new obstacle types are built
-        const OBSTACLE_POOL = ["pressurePlates", "keys", "levers", "convergePlates"];
+        // in a row - unless a dev override is set (see the "devSetObstacleType" message), which
+        // always wins so a specific obstacle can be tested without waiting on rotation.
         const choices = this.previousObstacleType
-            ? OBSTACLE_POOL.filter((type) => type !== this.previousObstacleType)
-            : OBSTACLE_POOL;
-        this.state.obstacleType = choices[Math.floor(Math.random() * choices.length)];
+            ? this.OBSTACLE_POOL.filter((type) => type !== this.previousObstacleType)
+            : this.OBSTACLE_POOL;
+        this.state.obstacleType = this.devForcedObstacleType ?? choices[Math.floor(Math.random() * choices.length)];
         this.previousObstacleType = this.state.obstacleType;
         console.log("obstacleType set to:", this.state.obstacleType);
 
@@ -880,6 +914,8 @@ export class GameRoom extends Room<GameState> {
             this.configureLevers();
         } else if (this.state.obstacleType === "convergePlates") {
             this.configureConvergePlates();
+        } else if (this.state.obstacleType === "linkedLevers") {
+            this.configureLinkedLevers();
         }
     }
 
@@ -892,6 +928,110 @@ export class GameRoom extends Room<GameState> {
         this.state.convergePlate0X = picks[0]?.x ?? -1; this.state.convergePlate0Y = picks[0]?.y ?? -1;
         this.state.convergePlate1X = picks[1]?.x ?? -1; this.state.convergePlate1Y = picks[1]?.y ?? -1;
         this.state.convergePlate2X = picks[2]?.x ?? -1; this.state.convergePlate2Y = picks[2]?.y ?? -1;
+    }
+
+    // Six wall-mounted levers, two per player slot, forming the hidden 2x3 Lights Out grid
+    // (see LinkedLeversState / TOGGLE_SETS). Picks 3 "base" cells spread apart like the other
+    // obstacles (one per player - these become grid positions A/B/C), then for each base finds
+    // a second mounting spot right next to it (another wall on the same cell if available,
+    // otherwise an adjacent cell) for that player's other lever (grid positions D/E/F).
+    private configureLinkedLevers() {
+        const candidates: { x: number; y: number; walls: number[] }[] = [];
+        for (let y = 0; y < this.state.gridHeight; y++) {
+            for (let x = 0; x < this.state.gridWidth; x++) {
+                const distFromStart = Math.abs(x - this.state.startX) + Math.abs(y - this.state.startY);
+                const distFromExit = Math.abs(x - this.state.exitX) + Math.abs(y - this.state.exitY);
+                if (distFromStart < 3 || distFromExit < 3) continue;
+
+                const mask = this.state.mazeWalls[mazeIndex(this.state.gridWidth, x, y)] ?? ALL_WALLS;
+                const availableWalls = WALL_DIRECTIONS.filter((dir) => (mask & dir) !== 0);
+                if (availableWalls.length === 0) continue;
+
+                candidates.push({ x, y, walls: availableWalls });
+            }
+        }
+
+        for (let i = candidates.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+
+        const bases: { x: number; y: number; walls: number[] }[] = [];
+        for (const c of candidates) {
+            if (bases.every((b) => Math.abs(b.x - c.x) + Math.abs(b.y - c.y) >= 3)) {
+                bases.push(c);
+                if (bases.length === 3) break;
+            }
+        }
+        for (let i = bases.length; i < 3 && i < candidates.length; i++) {
+            const c = candidates[i];
+            if (bases.some((b) => b.x === c.x && b.y === c.y)) continue;
+            bases.push(c);
+        }
+
+        const usedCells = new Set<string>();
+        const firstPicks: { x: number; y: number; wallDir: number }[] = [];
+        const secondPicks: { x: number; y: number; wallDir: number }[] = [];
+        const neighborOffsets: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+        for (const base of bases) {
+            const wallDir = base.walls[Math.floor(Math.random() * base.walls.length)];
+            firstPicks.push({ x: base.x, y: base.y, wallDir });
+            usedCells.add(`${base.x},${base.y}`);
+
+            const otherWalls = base.walls.filter((w) => w !== wallDir);
+            if (otherWalls.length > 0) {
+                // right next to the first lever - another wall of the same little room
+                const wallDir2 = otherWalls[Math.floor(Math.random() * otherWalls.length)];
+                secondPicks.push({ x: base.x, y: base.y, wallDir: wallDir2 });
+                continue;
+            }
+
+            let placed = false;
+            for (const [dx, dy] of neighborOffsets) {
+                const nx = base.x + dx;
+                const ny = base.y + dy;
+                const key = `${nx},${ny}`;
+                if (usedCells.has(key)) continue;
+                if (nx < 0 || ny < 0 || nx >= this.state.gridWidth || ny >= this.state.gridHeight) continue;
+
+                const mask = this.state.mazeWalls[mazeIndex(this.state.gridWidth, nx, ny)] ?? ALL_WALLS;
+                const walls = WALL_DIRECTIONS.filter((dir) => (mask & dir) !== 0);
+                if (walls.length === 0) continue;
+
+                const wallDir2 = walls[Math.floor(Math.random() * walls.length)];
+                secondPicks.push({ x: nx, y: ny, wallDir: wallDir2 });
+                usedCells.add(key);
+                placed = true;
+                break;
+            }
+            if (!placed) {
+                // extremely unlikely (every neighbor already used or wall-less) - mount on
+                // the base cell's own wall again rather than leave a lever unplaced
+                secondPicks.push({ x: base.x, y: base.y, wallDir });
+            }
+        }
+
+        const picks = [...firstPicks, ...secondPicks]; // 0-2 = A/B/C, 3-5 = D/E/F
+        const lv = this.state.linkedLevers;
+        lv.lever0X = picks[0]?.x ?? -1; lv.lever0Y = picks[0]?.y ?? -1; lv.lever0WallDir = picks[0]?.wallDir ?? 0;
+        lv.lever1X = picks[1]?.x ?? -1; lv.lever1Y = picks[1]?.y ?? -1; lv.lever1WallDir = picks[1]?.wallDir ?? 0;
+        lv.lever2X = picks[2]?.x ?? -1; lv.lever2Y = picks[2]?.y ?? -1; lv.lever2WallDir = picks[2]?.wallDir ?? 0;
+        lv.lever3X = picks[3]?.x ?? -1; lv.lever3Y = picks[3]?.y ?? -1; lv.lever3WallDir = picks[3]?.wallDir ?? 0;
+        lv.lever4X = picks[4]?.x ?? -1; lv.lever4Y = picks[4]?.y ?? -1; lv.lever4WallDir = picks[4]?.wallDir ?? 0;
+        lv.lever5X = picks[5]?.x ?? -1; lv.lever5Y = picks[5]?.y ?? -1; lv.lever5WallDir = picks[5]?.wallDir ?? 0;
+
+        // randomize which player owns which grid column, so the "who sits out vs who pulls"
+        // pattern isn't the same every time this obstacle comes up - only the adjacency math
+        // (fixed) determines the actual solution, ownership is just who's allowed to act
+        const columnOwners = [0, 1, 2];
+        for (let i = columnOwners.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [columnOwners[i], columnOwners[j]] = [columnOwners[j], columnOwners[i]];
+        }
+        lv.columnOwner0 = columnOwners[0];
+        lv.columnOwner1 = columnOwners[1];
+        lv.columnOwner2 = columnOwners[2];
     }
 
     private configurePressurePlates() {
@@ -1094,6 +1234,89 @@ export class GameRoom extends Room<GameState> {
         }
 
         if (this.state.leversPulledInOrder >= this.state.leversTotal) {
+            this.state.exitUnlocked = true;
+        }
+    }
+
+    // Toggle wiring for this obstacle's 6 levers (labeled A-F, indices 0-5). This is a
+    // randomly-searched graph (not a simple grid), found by brute-forcing ~200k candidates
+    // for one with NO easy shortcut. Verified: pulling every lever once fails safely, none
+    // of the 8 "one pull per column" combos solve it, and there is exactly ONE winning
+    // combination in the entire 64-state space - pull A, B, C, and E (leave D and F alone) -
+    // requiring 4 total pulls, the most of any design tried. Every pull is self-canceling
+    // (pulling the same lever again undoes just that pull) and all 64 states are reachable
+    // from any other, so there's no dead end the team can get stuck in - just more trial and
+    // error needed to land on the one combination that works.
+    private static readonly LINKED_LEVER_TOGGLE_SETS: number[][] = [
+        [0, 1, 2, 3], // A
+        [0, 1, 4], // B
+        [0, 2, 4], // C
+        [0, 3, 5], // D
+        [1, 2, 4, 5], // E
+        [3, 4, 5], // F
+    ];
+
+    private linkedLeverTriggerPosition(index: number) {
+        const lv = this.state.linkedLevers;
+        const cellX = [lv.lever0X, lv.lever1X, lv.lever2X, lv.lever3X, lv.lever4X, lv.lever5X][index];
+        const cellY = [lv.lever0Y, lv.lever1Y, lv.lever2Y, lv.lever3Y, lv.lever4Y, lv.lever5Y][index];
+        const wallDir = [
+            lv.lever0WallDir, lv.lever1WallDir, lv.lever2WallDir,
+            lv.lever3WallDir, lv.lever4WallDir, lv.lever5WallDir,
+        ][index];
+        const inset = 0.35;
+
+        let offsetX = 0;
+        let offsetY = 0;
+        if (wallDir === wallForDirection("up")) offsetY = -inset;
+        else if (wallDir === wallForDirection("down")) offsetY = inset;
+        else if (wallDir === wallForDirection("left")) offsetX = -inset;
+        else if (wallDir === wallForDirection("right")) offsetX = inset;
+
+        return { x: cellX + offsetX, y: cellY + offsetY };
+    }
+
+    // Grid column i (levers {i, i+3}) is owned by player slot columnOwner[i] - randomized
+    // per level in configureLinkedLevers, not fixed to slot === column - only that player
+    // may pull either of their two. Ownership is only enforced in multiplayer - solo mode
+    // has just one player, so locking levers to different slots would leave 4 of the 6
+    // permanently unpullable.
+    private handlePullLinkedLever(client: Client) {
+        if (!this.state.gameStarted || this.state.countdown > 0 || this.state.isGameOver) return;
+        if (this.state.obstacleType !== "linkedLevers") return;
+        if (this.state.exitUnlocked) return;
+
+        const player = this.state.players.get(client.sessionId);
+        if (!player) return;
+
+        const lv = this.state.linkedLevers;
+        const cellX = [lv.lever0X, lv.lever1X, lv.lever2X, lv.lever3X, lv.lever4X, lv.lever5X];
+        const cellY = [lv.lever0Y, lv.lever1Y, lv.lever2Y, lv.lever3Y, lv.lever4Y, lv.lever5Y];
+        const columnOwner = [lv.columnOwner0, lv.columnOwner1, lv.columnOwner2];
+
+        const playerCellX = Math.round(player.x);
+        const playerCellY = Math.round(player.y);
+        let nearestIndex = -1;
+        let nearestDistance = this.LEVER_RADIUS;
+        for (let i = 0; i < 6; i++) {
+            if (cellX[i] < 0) continue;
+            if (cellX[i] !== playerCellX || cellY[i] !== playerCellY) continue;
+            if (!this.isSoloMode && player.slot !== columnOwner[i % 3]) continue; // not this player's lever
+
+            const { x, y } = this.linkedLeverTriggerPosition(i);
+            const distance = Math.hypot(player.x - x, player.y - y);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestIndex = i;
+            }
+        }
+        if (nearestIndex === -1) return; // nothing in reach (or not this player's lever)
+
+        for (const bit of GameRoom.LINKED_LEVER_TOGGLE_SETS[nearestIndex]) {
+            lv.litMask ^= (1 << bit);
+        }
+
+        if (lv.litMask === 0b111111) {
             this.state.exitUnlocked = true;
         }
     }
