@@ -1067,20 +1067,56 @@ function ExitPortal({
       <mesh position={[PORTAL_HALF_WIDTH - PORTAL_RIM / 2, 0, 0]} material={frameMaterial}>
         <planeGeometry args={[PORTAL_RIM, PORTAL_HALF_HEIGHT * 2]} />
       </mesh>
-      {/* extended past the actual floor level (not just down to it) - the group sits above
-          y=0 for floor clearance, so a box exactly matching the frame height left its bottom
-          face just above the real floor's grid line texture (drawn at y=0.02), leaving a gap
-          the grid showed through. Extending only downward (top edge unchanged) closes that. */}
-      <mesh position={[0, -PORTAL_FLOOR_OVERLAP / 2, -PORTAL_VOID_DEPTH / 2]}>
-        <boxGeometry
-          args={[
-            PORTAL_HALF_WIDTH * 2 - PORTAL_RIM,
-            PORTAL_HALF_HEIGHT * 2 - PORTAL_RIM + PORTAL_FLOOR_OVERLAP,
-            PORTAL_VOID_DEPTH,
-          ]}
-        />
-        <meshBasicMaterial color="#000000" side={THREE.BackSide} />
-      </mesh>
+      {/* Void: 5 separate inward-facing planes (back/left/right/top/bottom), deliberately
+          NOT a closed box - the 6th ("near"/entrance) face is left out on purpose. A closed
+          BackSide box looks right approaching from outside (you only ever see the far inner
+          faces), but once a player actually walks inside (exitUnlocked lets them all the way
+          in), that near face would sit directly behind them, at the doorway itself - looking
+          back toward the corridor to see teammates would just show its flat black interior
+          instead of the real maze. Leaving that one face out means there's nothing there to
+          block the view back out. Extended past the actual floor level (not just down to it)
+          - the group sits above y=0 for floor clearance, so a face exactly matching the frame
+          height left a gap the real floor's grid line texture (drawn at y=0.02) showed
+          through; extending only downward (top edge unchanged) closes that. */}
+      {(() => {
+        const voidWidth = PORTAL_HALF_WIDTH * 2 - PORTAL_RIM;
+        const voidHeight = PORTAL_HALF_HEIGHT * 2 - PORTAL_RIM + PORTAL_FLOOR_OVERLAP;
+        const centerY = -PORTAL_FLOOR_OVERLAP / 2;
+        const halfW = voidWidth / 2;
+        const topY = centerY + voidHeight / 2;
+        const bottomY = centerY - voidHeight / 2;
+        const midZ = -PORTAL_VOID_DEPTH / 2;
+
+        return (
+          <>
+            {/* far wall */}
+            <mesh position={[0, centerY, -PORTAL_VOID_DEPTH]}>
+              <planeGeometry args={[voidWidth, voidHeight]} />
+              <meshBasicMaterial color="#000000" side={THREE.FrontSide} />
+            </mesh>
+            {/* left wall */}
+            <mesh position={[-halfW, centerY, midZ]} rotation={[0, Math.PI / 2, 0]}>
+              <planeGeometry args={[PORTAL_VOID_DEPTH, voidHeight]} />
+              <meshBasicMaterial color="#000000" side={THREE.FrontSide} />
+            </mesh>
+            {/* right wall */}
+            <mesh position={[halfW, centerY, midZ]} rotation={[0, -Math.PI / 2, 0]}>
+              <planeGeometry args={[PORTAL_VOID_DEPTH, voidHeight]} />
+              <meshBasicMaterial color="#000000" side={THREE.FrontSide} />
+            </mesh>
+            {/* top */}
+            <mesh position={[0, topY, midZ]} rotation={[Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[voidWidth, PORTAL_VOID_DEPTH]} />
+              <meshBasicMaterial color="#000000" side={THREE.FrontSide} />
+            </mesh>
+            {/* bottom */}
+            <mesh position={[0, bottomY, midZ]} rotation={[-Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[voidWidth, PORTAL_VOID_DEPTH]} />
+              <meshBasicMaterial color="#000000" side={THREE.FrontSide} />
+            </mesh>
+          </>
+        );
+      })()}
       <PortalParticles
         halfWidth={PORTAL_HALF_WIDTH - PORTAL_RIM * 2}
         halfHeight={PORTAL_HALF_HEIGHT - PORTAL_RIM * 2}
