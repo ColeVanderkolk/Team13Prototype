@@ -21,6 +21,7 @@ const WALL_DIRECTIONS = [
 interface PositionMessage {
     x?: number;
     y?: number;
+    yaw?: number;
 }
 
 interface DrawStrokeMessage {
@@ -671,6 +672,9 @@ export class GameRoom extends Room<GameState> {
 
         player.x = x;
         player.y = y;
+        if (typeof message.yaw === "number" && Number.isFinite(message.yaw)) {
+            player.yaw = message.yaw;
+        }
         this.lastAcceptedAt.set(client.sessionId, Date.now());
         this.checkPressurePlates();
         this.checkConvergePlates();

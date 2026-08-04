@@ -3,6 +3,12 @@ import { Schema, type, MapSchema, ArraySchema } from "@colyseus/schema";
 export class Player extends Schema {
     @type("number") x: number = 0;
     @type("number") y: number = 0;
+    // Facing direction in radians, client-computed (camera yaw in first person, movement
+    // direction in overhead mode - see MazeBoard.tsx) and sent alongside position. Lets other
+    // clients render this player's avatar actually facing the way they're facing/moving,
+    // instead of guessing it from position deltas (which broke down for turning-in-place and
+    // reversing direction).
+    @type("number") yaw: number = 0;
     @type("string") sessionId: string = "";
     @type("string") name: string = "";
     // permanent color/plate/key slot, assigned once at join — never recalculated from a live

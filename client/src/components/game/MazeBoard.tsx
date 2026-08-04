@@ -152,6 +152,7 @@ const CONTROL_CODES = {
 interface MazePlayer {
   x: number;
   y: number;
+  yaw: number; // facing direction in radians, server-synced (see Player.yaw)
   sessionId: string;
   name: string;
   slot: number; // permanent color/plate/key slot, assigned once at join
@@ -676,10 +677,6 @@ function PlayerToken({
       avatarRef.current.visible = !(isMe && firstPersonRef?.current);
     }
 
-    const moveX = visualTarget.x - groupRef.current.position.x;
-    const moveZ = visualTarget.z - groupRef.current.position.z;
-    const moving = Math.hypot(moveX, moveZ) > 0.006;
-
     if (localPositionRef) {
       groupRef.current.position.copy(desiredPosition.current);
     } else {
@@ -705,8 +702,11 @@ function PlayerToken({
 
     if (isMe && firstPersonRef?.current && fpYawRef) {
       groupRef.current.rotation.y = fpYawRef.current;
-    } else if (moving) {
-      const targetYaw = Math.atan2(moveX, moveZ);
+    } else {
+      // Server-synced facing (see Player.yaw) - smoothly turned toward rather than snapped,
+      // but no longer inferred from position deltas, which broke down for turning-in-place
+      // and reversing direction (avatar would appear to slide without ever turning).
+      const targetYaw = player.yaw;
       let deltaYaw = targetYaw - groupRef.current.rotation.y;
       while (deltaYaw > Math.PI) deltaYaw -= Math.PI * 2;
       while (deltaYaw < -Math.PI) deltaYaw += Math.PI * 2;
@@ -1227,8 +1227,14 @@ export function MazeBoard({
   const noclipRef = useRef(false); // dev-only: N key - walk through walls
   const fpYawRef = useRef(0); // horizontal facing while in first person
   const fpPitchRef = useRef(0); // vertical look while in first person
+  // This player's actual facing, synced to the server so other clients can render this
+  // avatar turned the right way instead of guessing it from position deltas (see PlayerToken).
+  // First person: always the camera yaw. Overhead: last direction actually moved in, held
+  // steady while standing still rather than resetting.
+  const localYawRef = useRef(0);
   const lastSentAtRef = useRef(0);
   const lastSentPositionRef = useRef<LocalPosition>({ x: Number.NaN, y: Number.NaN });
+  const lastSentYawRef = useRef(Number.NaN);
   const lastMazeSignatureRef = useRef("");
 
   const [graffiti, setGraffiti] = useState<Array<GraffitiStrokeData & { wallKey: string }>>([]);
@@ -1961,6 +1967,14 @@ export function MazeBoard({
       (CONTROL_CODES.left.some((code) => pressed.has(code)) ? -1 : 0);
     const moving = forward !== 0 || right !== 0;
 
+    // Facing to report to the server (see localYawRef declaration above). First person: the
+    // camera controls facing independent of movement (strafe/backpedal without turning), so
+    // this always tracks fpYawRef, moving or not. Overhead has no separate look direction, so
+    // it's set below from actual movement, and simply held steady while standing still.
+    if (firstPersonRef.current) {
+      localYawRef.current = fpYawRef.current;
+    }
+
     if (moving) {
       let moveX = 0;
       let moveY = 0;
@@ -1985,6 +1999,10 @@ export function MazeBoard({
       if (length > 0) {
         moveX /= length;
         moveY /= length;
+
+        if (!firstPersonRef.current) {
+          localYawRef.current = Math.atan2(moveX, moveY);
+        }
 
         const sprinting = pressed.has("ShiftLeft") || pressed.has("ShiftRight");
         const speed = sprinting ? SPRINT_SPEED : WALK_SPEED;
@@ -2014,15 +2032,24 @@ export function MazeBoard({
       localPositionRef.current.x - lastSentPositionRef.current.x,
       localPositionRef.current.y - lastSentPositionRef.current.y,
     );
+    // wrapped angular difference, so e.g. turning from just-under-PI to just-over-PI doesn't
+    // read as a huge jump - matters here since standing still and just looking around (no
+    // movement at all) should still push a fresh yaw to other clients
+    let yawDelta = localYawRef.current - lastSentYawRef.current;
+    while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
+    while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+    const turnedSinceSend = !Number.isFinite(lastSentYawRef.current) || Math.abs(yawDelta) > 0.02;
 
-    if (elapsedSinceSend >= POSITION_SEND_INTERVAL && (moving || movedSinceSend > 0.01)) {
+    if (elapsedSinceSend >= POSITION_SEND_INTERVAL && (moving || movedSinceSend > 0.01 || turnedSinceSend)) {
       const x = Math.round(localPositionRef.current.x * 1000) / 1000;
       const y = Math.round(localPositionRef.current.y * 1000) / 1000;
+      const yaw = Math.round(localYawRef.current * 1000) / 1000;
 
-      room.send("position", { x, y });
+      room.send("position", { x, y, yaw });
       lastSentAtRef.current = state.clock.elapsedTime;
       lastSentPositionRef.current.x = localPositionRef.current.x;
       lastSentPositionRef.current.y = localPositionRef.current.y;
+      lastSentYawRef.current = localYawRef.current;
     }
   });
 

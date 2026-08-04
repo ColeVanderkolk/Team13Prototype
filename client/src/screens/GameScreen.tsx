@@ -74,6 +74,7 @@ const TEAM_COLORS = ["#38f8b6", "#ff5a7a", "#facc15", "#a78bfa", "#fb923c", "#67
 interface PlayerState {
     x: number;
     y: number;
+    yaw: number; // facing direction in radians, server-synced (see Player.yaw)
     sessionId: string;
     name: string;
     slot: number; // permanent color/plate/key slot, assigned once at join

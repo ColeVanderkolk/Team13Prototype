@@ -29,6 +29,7 @@ interface UnlockedMilestone {
 interface PlayerState {
     x: number;
     y: number;
+    yaw: number; // facing direction in radians, server-synced (see Player.yaw)
     sessionId: string;
     name: string;
     slot: number; // permanent color/plate/key slot, assigned once at join
@@ -389,7 +390,7 @@ const Index = () => {
 
     const newPlayers = new Map<string, PlayerState>();
     gameRoom.state.players?.forEach((p, id) => {
-      newPlayers.set(id, { x: p.x, y: p.y, sessionId: p.sessionId, name: p.name || "", slot: p.slot ?? -1 });
+      newPlayers.set(id, { x: p.x, y: p.y, yaw: p.yaw ?? 0, sessionId: p.sessionId, name: p.name || "", slot: p.slot ?? -1 });
     });
 
     const newCollectibles: Collectible[] = [];
