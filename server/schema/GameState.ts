@@ -85,6 +85,19 @@ export class GameState extends Schema {
     @type(["number"]) leverCellY = new ArraySchema<number>();
     @type(["number"]) leverWallDir = new ArraySchema<number>();
 
+    // converge plates: three plates, each locks in permanently once every player in the room
+    // is standing on it together (any order). completedMask tracks which of the 3 (by index)
+    // are done; completionOrder records the order they were done in (plate indices), driving
+    // which side of the exit triangle lights up next and in what color.
+    @type("number") convergePlate0X: number = -1;
+    @type("number") convergePlate0Y: number = -1;
+    @type("number") convergePlate1X: number = -1;
+    @type("number") convergePlate1Y: number = -1;
+    @type("number") convergePlate2X: number = -1;
+    @type("number") convergePlate2Y: number = -1;
+    @type("number") convergePlatesCompletedMask: number = 0;
+    @type(["number"]) convergePlateCompletionOrder = new ArraySchema<number>();
+
     @type([Collectible]) collectibles = new ArraySchema<Collectible>();
 
     // Secret bonus collectible - 0 or 1 entries. Spawns once all regular collectibles in the

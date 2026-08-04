@@ -137,6 +137,14 @@ interface GameScreenProps {
     leverCellY: number[];
     leverWallDir: number[];
     onWrongPull?: () => void;
+    convergePlate0X: number;
+    convergePlate0Y: number;
+    convergePlate1X: number;
+    convergePlate1Y: number;
+    convergePlate2X: number;
+    convergePlate2Y: number;
+    convergePlatesCompletedMask: number;
+    convergePlateCompletionOrder: number[];
 }
 
 /** Horizontal slider styled to match the in-game score bar (cyan frame + navy→white gradient fill). */
@@ -265,6 +273,14 @@ export const GameScreen = ({
     leverCellX,
     leverCellY,
     leverWallDir,
+    convergePlate0X,
+    convergePlate0Y,
+    convergePlate1X,
+    convergePlate1Y,
+    convergePlate2X,
+    convergePlate2Y,
+    convergePlatesCompletedMask,
+    convergePlateCompletionOrder,
 }: GameScreenProps) => {
     const pendingInputsRef = useRef<Map<number, { x: number, y: number }>>(new Map());
     const seqCounterRef = useRef(0);
@@ -830,6 +846,14 @@ export const GameScreen = ({
           leverCellX={leverCellX}
           leverCellY={leverCellY}
           leverWallDir={leverWallDir}
+          convergePlate0X={convergePlate0X}
+          convergePlate0Y={convergePlate0Y}
+          convergePlate1X={convergePlate1X}
+          convergePlate1Y={convergePlate1Y}
+          convergePlate2X={convergePlate2X}
+          convergePlate2Y={convergePlate2Y}
+          convergePlatesCompletedMask={convergePlatesCompletedMask}
+          convergePlateCompletionOrder={convergePlateCompletionOrder}
           onWrongPull={() => playSound("error")}
           compassYawRef={compassYawRef}
           leverInRangeRef={leverInRangeRef}

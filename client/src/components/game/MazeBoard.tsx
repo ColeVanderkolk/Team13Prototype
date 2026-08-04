@@ -4,8 +4,9 @@ import { useTexture } from "@react-three/drei";
 import type * as Client from "colyseus.js";
 import * as THREE from "three";
 import { MazeCollectibles, SuperMazeCollectible } from "./MazeCollectibles";
-import { ExitBarrier, FlashlightProp, MazePlayerAvatar, MazeWallPiece, USE_CUSTOM_WALL_MODELS, HAS_WALL_MODEL } from "./MazeModels";
+import { ExitBarrier, ExitProgressTriangle, FlashlightProp, MazePlayerAvatar, MazeWallPiece, USE_CUSTOM_WALL_MODELS, HAS_WALL_MODEL } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
+import { ConvergePlates } from "./ConvergePlates";
 import { Levers } from "./Levers";
 import { Keys } from "./Keys";
 import { useSounds } from "@/hooks/use-sounds";
@@ -209,6 +210,15 @@ interface MazeBoardProps {
   leverCellY: number[];
   leverWallDir: number[];
   onWrongPull?: () => void;
+
+  convergePlate0X: number;
+  convergePlate0Y: number;
+  convergePlate1X: number;
+  convergePlate1Y: number;
+  convergePlate2X: number;
+  convergePlate2Y: number;
+  convergePlatesCompletedMask: number;
+  convergePlateCompletionOrder: number[];
 
   compassYawRef: MutableRefObject<number | null>;
   leverInRangeRef?: MutableRefObject<boolean>;
@@ -718,12 +728,13 @@ const PORTAL_HALF_WIDTH = CELL_SIZE / 2 - 0.14;
 const PORTAL_HALF_HEIGHT = WALL_HEIGHT / 2;
 const PORTAL_RIM = 0.06;
 // Depth from the doorway threshold back to the void's rear wall. The portal sits at the
-// threshold (THRESHOLD_OFFSET from the cell center, toward the opening), and the real solid
-// dead-end wall is roughly another (CELL_SIZE/2 - WALL_THICKNESS/2) further on - a good deal
-// more room than it might look like from the threshold alone, since that's most of the cell's
-// far side too. Kept a safe margin under that combined distance so it can't overshoot into
-// the real wall the way the original cell-centered version did.
-const PORTAL_VOID_DEPTH = 1.3;
+// threshold (THRESHOLD_OFFSET out from the cell center, toward the opening); the real solid
+// dead-end wall's inner face is (CELL_SIZE / 2 - WALL_THICKNESS / 2) out from the cell center
+// on the far side, so the full threshold-to-wall distance is THRESHOLD_OFFSET plus that - about
+// 1.59 for the current CELL_SIZE/WALL_THICKNESS. A previous, shallower value (1.3) undershot
+// that by ~0.3, leaving a strip of real (lit) floor visible beyond the void's back face -
+// this stays close to the true distance, just short enough to avoid z-fighting with the wall.
+const PORTAL_VOID_DEPTH = 1.5;
 const PORTAL_LIFT = 0.015;
 // How far past the real floor level the void box's bottom face extends, so it fully covers
 // the floor grid texture instead of leaving a sliver of it visible right at the threshold.
@@ -1105,6 +1116,15 @@ export function MazeBoard({
   leverCellY,
   leverWallDir,
   onWrongPull,
+
+  convergePlate0X,
+  convergePlate0Y,
+  convergePlate1X,
+  convergePlate1Y,
+  convergePlate2X,
+  convergePlate2Y,
+  convergePlatesCompletedMask,
+  convergePlateCompletionOrder,
 
   compassYawRef,
   leverInRangeRef,
@@ -1982,6 +2002,23 @@ export function MazeBoard({
           />
         )}
 
+        {/* converge-plates exit triangle — lights up a side (in the completed plate's color)
+            each time a plate locks in; stays mounted independent of exitUnlocked (not nested
+            under the barrier's conditional) so it can actually show green once the team
+            gathers at the exit and unlocks it, instead of vanishing the same instant it
+            would've turned green */}
+        {obstacleType === "convergePlates" && (
+          <ExitProgressTriangle
+            exitWorldX={exitWorldX}
+            exitWorldZ={exitWorldZ}
+            orientationY={exitPortalOrientationY}
+            wallHeight={WALL_HEIGHT}
+            cellSize={CELL_SIZE}
+            completionOrder={convergePlateCompletionOrder}
+            isUnlocked={exitUnlocked}
+          />
+        )}
+
         {exitUnlocked && (
           <>
             {EXIT_VISUAL === "diamond" ? (
@@ -2126,6 +2163,19 @@ export function MazeBoard({
             keysCollectedMask={keysCollectedMask}
             onKeyCollected={(index) => room?.send("collectKey", {index})}
             onCollection={()=>playSound("key")}
+          />
+        )}
+
+        {obstacleType === "convergePlates" && (
+          <ConvergePlates
+            plates={[
+              { gridX: convergePlate0X, gridY: convergePlate0Y },
+              { gridX: convergePlate1X, gridY: convergePlate1Y },
+              { gridX: convergePlate2X, gridY: convergePlate2Y },
+            ].filter((p) => p.gridX >= 0)}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            completedMask={convergePlatesCompletedMask}
           />
         )}
       </group>

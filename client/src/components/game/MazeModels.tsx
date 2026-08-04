@@ -242,3 +242,90 @@ export function ExitBarrier({
     </group>
   );
 }
+
+// must match PLATE_COLORS in ConvergePlates.tsx - a triangle side's lit color identifies
+// which of the 3 plates was completed, so the two need to stay in sync
+const TRIANGLE_PLATE_COLORS = ["#38f8b6", "#ff5a7a", "#facc15"];
+const TRIANGLE_UNLIT_COLOR = "#3a3a3a";
+const TRIANGLE_COMPLETE_COLOR = "#4ade80"; // green - all three plates done, come to the exit
+const TRIANGLE_RADIUS = 0.55;
+const TRIANGLE_BAR_THICKNESS = 0.07;
+
+const TRIANGLE_VERTICES: Array<[number, number]> = [0, 1, 2].map((i) => {
+  const angle = Math.PI / 2 + (i * 2 * Math.PI) / 3; // start pointing up, go around
+  return [Math.cos(angle) * TRIANGLE_RADIUS, Math.sin(angle) * TRIANGLE_RADIUS];
+});
+
+function triangleBarTransform(p1: [number, number], p2: [number, number]) {
+  const dx = p2[0] - p1[0];
+  const dy = p2[1] - p1[1];
+  return {
+    length: Math.hypot(dx, dy),
+    midX: (p1[0] + p2[0]) / 2,
+    midY: (p1[1] + p2[1]) / 2,
+    angle: Math.atan2(dy, dx),
+  };
+}
+
+const TRIANGLE_SIDES = [
+  triangleBarTransform(TRIANGLE_VERTICES[0], TRIANGLE_VERTICES[1]),
+  triangleBarTransform(TRIANGLE_VERTICES[1], TRIANGLE_VERTICES[2]),
+  triangleBarTransform(TRIANGLE_VERTICES[2], TRIANGLE_VERTICES[0]),
+];
+
+// Progress readout for the "convergePlates" obstacle, mounted on the exit barrier's own front
+// face. A side lights up (in the color of whichever plate the team just completed) in
+// whatever order they finish them in — not tied to a fixed side-per-plate mapping. The whole
+// triangle only turns green once `isUnlocked` (the team has gathered at the exit after all
+// three plates are done — see checkExitAdvance's convergePlates branch); mounted independent
+// of exitUnlocked (not nested under a `!exitUnlocked` check) so it keeps showing green after
+// the barrier disappears, instead of vanishing in the same instant it turns green.
+export function ExitProgressTriangle({
+  exitWorldX,
+  exitWorldZ,
+  orientationY,
+  wallHeight,
+  cellSize,
+  completionOrder,
+  isUnlocked,
+}: {
+  exitWorldX: number;
+  exitWorldZ: number;
+  orientationY: number;
+  wallHeight: number;
+  cellSize: number;
+  completionOrder: number[];
+  isUnlocked: boolean;
+}) {
+  // just in front of the barrier's own front face (barrier depth is cellSize * 0.6, so its
+  // front sits at half that from center) - close enough to read as mounted on it
+  const zOffset = cellSize * 0.3 + 0.03;
+
+  return (
+    <group position={[exitWorldX, wallHeight / 2, exitWorldZ]} rotation={[0, orientationY, 0]}>
+      {TRIANGLE_SIDES.map((side, sideIndex) => {
+        const plateIndex = completionOrder[sideIndex];
+        const isLit = isUnlocked || plateIndex !== undefined;
+        const color = isUnlocked
+          ? TRIANGLE_COMPLETE_COLOR
+          : plateIndex !== undefined
+            ? TRIANGLE_PLATE_COLORS[plateIndex] ?? TRIANGLE_UNLIT_COLOR
+            : TRIANGLE_UNLIT_COLOR;
+
+        return (
+          <mesh key={sideIndex} position={[side.midX, side.midY, zOffset]} rotation={[0, 0, side.angle]}>
+            <planeGeometry args={[side.length, TRIANGLE_BAR_THICKNESS]} />
+            <meshStandardMaterial
+              color={color}
+              emissive={color}
+              emissiveIntensity={isLit ? 0.7 : 0.15}
+              roughness={0.3}
+              metalness={0.1}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}

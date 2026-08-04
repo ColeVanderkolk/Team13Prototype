@@ -77,6 +77,16 @@ interface ServerGameState {
     leverCellX: { forEach: (callback: (value: number) => void) => void };
     leverCellY: { forEach: (callback: (value: number) => void) => void };
     leverWallDir: { forEach: (callback: (value: number) => void) => void };
+
+    convergePlate0X: number;
+    convergePlate0Y: number;
+    convergePlate1X: number;
+    convergePlate1Y: number;
+    convergePlate2X: number;
+    convergePlate2Y: number;
+    convergePlatesCompletedMask: number;
+    convergePlateCompletionOrder: { forEach: (callback: (value: number) => void) => void };
+
     totalScore: number;
     gameStarted: boolean;
     countdown: number;
@@ -129,6 +139,16 @@ interface GameStateLocal {
   leverCellX: number[];
   leverCellY: number[];
   leverWallDir: number[];
+
+  convergePlate0X: number;
+  convergePlate0Y: number;
+  convergePlate1X: number;
+  convergePlate1Y: number;
+  convergePlate2X: number;
+  convergePlate2Y: number;
+  convergePlatesCompletedMask: number;
+  convergePlateCompletionOrder: number[];
+
   players: Map<string, PlayerState>;
   collectibles: Collectible[];
   superCollectibles: Collectible[];
@@ -184,6 +204,16 @@ const initialGameState: GameStateLocal = {
     leverCellX: [],
     leverCellY: [],
     leverWallDir: [],
+
+    convergePlate0X: -1,
+    convergePlate0Y: -1,
+    convergePlate1X: -1,
+    convergePlate1Y: -1,
+    convergePlate2X: -1,
+    convergePlate2Y: -1,
+    convergePlatesCompletedMask: 0,
+    convergePlateCompletionOrder: [],
+
     players: new Map(),
     collectibles: [],
     superCollectibles: [],
@@ -321,6 +351,9 @@ const Index = () => {
     const leverWallDir: number[] = [];
     gameRoom.state.leverWallDir?.forEach((value) => leverWallDir.push(value));
 
+    const convergePlateCompletionOrder: number[] = [];
+    gameRoom.state.convergePlateCompletionOrder?.forEach((value) => convergePlateCompletionOrder.push(value));
+
     dispatch({
       type: "SYNC_STATE",
       payload: {
@@ -359,6 +392,16 @@ const Index = () => {
           leverCellX,
           leverCellY,
           leverWallDir,
+
+          convergePlate0X: gameRoom.state.convergePlate0X ?? -1,
+          convergePlate0Y: gameRoom.state.convergePlate0Y ?? -1,
+          convergePlate1X: gameRoom.state.convergePlate1X ?? -1,
+          convergePlate1Y: gameRoom.state.convergePlate1Y ?? -1,
+          convergePlate2X: gameRoom.state.convergePlate2X ?? -1,
+          convergePlate2Y: gameRoom.state.convergePlate2Y ?? -1,
+          convergePlatesCompletedMask: gameRoom.state.convergePlatesCompletedMask || 0,
+          convergePlateCompletionOrder,
+
           totalScore: gameRoom.state.totalScore || 0,
           gameStarted: gameRoom.state.gameStarted || false,
           stage: gameRoom.state.stage || 1,
@@ -760,6 +803,14 @@ const Index = () => {
         leverCellX={gameState.leverCellX}
         leverCellY={gameState.leverCellY}
         leverWallDir={gameState.leverWallDir}
+        convergePlate0X={gameState.convergePlate0X}
+        convergePlate0Y={gameState.convergePlate0Y}
+        convergePlate1X={gameState.convergePlate1X}
+        convergePlate1Y={gameState.convergePlate1Y}
+        convergePlate2X={gameState.convergePlate2X}
+        convergePlate2Y={gameState.convergePlate2Y}
+        convergePlatesCompletedMask={gameState.convergePlatesCompletedMask}
+        convergePlateCompletionOrder={gameState.convergePlateCompletionOrder}
         keysRequired={gameState.keysRequired}
         key0X={gameState.key0X}
         key0Y={gameState.key0Y}

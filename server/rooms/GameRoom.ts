@@ -67,6 +67,18 @@ export class GameRoom extends Room<GameState> {
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
     private readonly PLATE_RADIUS = 0.2;
+    // "gathered at the exit" for convergePlates, while still locked — the barrier keeps anyone
+    // from getting closer than 0.5 to the exit center (see canOccupy), which is farther out than
+    // isAtExit's 0.35, so that check alone can never be satisfied here. Sized to comfortably
+    // cover the single corridor cell leading into the exit (its center sits 1.0 away) so three
+    // players don't have to cram right up against the barrier in first person to register.
+    private readonly CONVERGE_EXIT_GATHER_RADIUS = 1.2;
+    // After the team gathers and the exit unlocks, hold advancing to the next level briefly so
+    // the barrier-gone/triangle-green payoff is actually visible for a beat, instead of
+    // instantly vanishing into the next level's maze (which happens immediately otherwise,
+    // since the team is already standing right at the exit at the moment it unlocks).
+    private readonly CONVERGE_EXIT_ADVANCE_HOLD_MS = 1200;
+    private convergePlatesUnlockedAt: number | null = null;
     // Registry of party codes currently in use, shared across rooms via presence
     private static readonly PARTY_CODE_CHANNEL = "$fyw-party-codes";
     // No 0/O or 1/I/L, so codes are unambiguous when shared out loud or handwritten
@@ -383,6 +395,15 @@ export class GameRoom extends Room<GameState> {
             }
         }
 
+        if (this.state.obstacleType === "convergePlates") {
+            const plates = [
+                { x: this.state.convergePlate0X, y: this.state.convergePlate0Y },
+                { x: this.state.convergePlate1X, y: this.state.convergePlate1Y },
+                { x: this.state.convergePlate2X, y: this.state.convergePlate2Y },
+            ];
+            for (const p of plates) if (p.x >= 0) positions.push(p);
+        }
+
         return positions;
     }
 
@@ -620,6 +641,7 @@ export class GameRoom extends Room<GameState> {
         player.y = y;
         this.lastAcceptedAt.set(client.sessionId, Date.now());
         this.checkPressurePlates();
+        this.checkConvergePlates();
         this.checkExitAdvance();
     }
 
@@ -765,6 +787,26 @@ export class GameRoom extends Room<GameState> {
 
             }
 
+            if (this.state.obstacleType === "convergePlates") {
+                if (this.state.convergePlatesCompletedMask !== 0b111) {
+                    this.state.playersAtExit = 0;
+                    return;
+                }
+
+                // all 3 plates locked in - now gate on the team actually gathering at the
+                // door (using CONVERGE_EXIT_GATHER_RADIUS, not isAtExit's 0.35, since the
+                // barrier is still up and physically blocks anyone from getting that close)
+                const players = Array.from(this.state.players.values());
+                if (players.length === 0) return;
+                this.state.playersAtExit = players.filter(
+                    (p) => Math.hypot(p.x - this.state.exitX, p.y - this.state.exitY) < this.CONVERGE_EXIT_GATHER_RADIUS,
+                ).length;
+                if (this.state.playersAtExit >= players.length) {
+                    this.state.exitUnlocked = true;
+                    this.convergePlatesUnlockedAt = Date.now();
+                }
+                return;
+            }
 
             this.state.playersAtExit = 0;
             return;
@@ -775,6 +817,14 @@ export class GameRoom extends Room<GameState> {
         if (players.length === 0) return;
 
         this.state.playersAtExit = players.filter(p => this.isAtExit(p)).length;
+
+        if (
+            this.state.obstacleType === "convergePlates" &&
+            this.convergePlatesUnlockedAt !== null &&
+            Date.now() - this.convergePlatesUnlockedAt < this.CONVERGE_EXIT_ADVANCE_HOLD_MS
+        ) {
+            return; // let the barrier-gone/green-triangle moment actually register before advancing
+        }
 
         if (this.state.playersAtExit >= players.length) {
             this.advanceLevel();
@@ -802,12 +852,19 @@ export class GameRoom extends Room<GameState> {
         this.state.leverCellY = new ArraySchema<number>();
         this.state.leverWallDir = new ArraySchema<number>();
 
+        this.state.convergePlate0X = -1; this.state.convergePlate0Y = -1;
+        this.state.convergePlate1X = -1; this.state.convergePlate1Y = -1;
+        this.state.convergePlate2X = -1; this.state.convergePlate2Y = -1;
+        this.state.convergePlatesCompletedMask = 0;
+        this.state.convergePlateCompletionOrder = new ArraySchema<number>();
+        this.convergePlatesUnlockedAt = null;
+
         this.state.exitUnlocked = false;
         this.state.playersAtExit = 0;
 
         // pick one obstacle type randomly from the pool each level, never the same one twice
         // in a row — add more strings here later when new obstacle types are built
-        const OBSTACLE_POOL = ["pressurePlates", "keys", "levers"];
+        const OBSTACLE_POOL = ["pressurePlates", "keys", "levers", "convergePlates"];
         const choices = this.previousObstacleType
             ? OBSTACLE_POOL.filter((type) => type !== this.previousObstacleType)
             : OBSTACLE_POOL;
@@ -821,7 +878,20 @@ export class GameRoom extends Room<GameState> {
             this.configureKeys();
         } else if (this.state.obstacleType === "levers") {
             this.configureLevers();
+        } else if (this.state.obstacleType === "convergePlates") {
+            this.configureConvergePlates();
         }
+    }
+
+    // Three plates, spread out like the other obstacle types. Each one is completed by every
+    // current player standing on it together (see checkConvergePlates) - unlike
+    // configurePressurePlates, there's no per-player assignment here, so a plain spread pick
+    // is all that's needed.
+    private configureConvergePlates() {
+        const picks = this.pickSpreadCells(3);
+        this.state.convergePlate0X = picks[0]?.x ?? -1; this.state.convergePlate0Y = picks[0]?.y ?? -1;
+        this.state.convergePlate1X = picks[1]?.x ?? -1; this.state.convergePlate1Y = picks[1]?.y ?? -1;
+        this.state.convergePlate2X = picks[2]?.x ?? -1; this.state.convergePlate2Y = picks[2]?.y ?? -1;
     }
 
     private configurePressurePlates() {
@@ -1065,6 +1135,43 @@ export class GameRoom extends Room<GameState> {
         if (activated >= this.state.pressurePlatesRequired) {
             this.state.exitUnlocked = true;
         }
+    }
+
+    // Converge plates: unlike checkPressurePlates, there's no per-player assignment - each of
+    // the 3 plates locks in permanently the instant every current player is standing on it
+    // together, in whatever order the team finds them. Locking in never gets undone, even if
+    // everyone later walks back across an already-completed plate.
+    private checkConvergePlates() {
+        if (this.state.obstacleType !== "convergePlates") return;
+        if (this.state.convergePlatesCompletedMask === 0b111) return; // all three already done
+
+        const players = Array.from(this.state.players.values());
+        if (players.length === 0) return;
+
+        const plates = [
+            { x: this.state.convergePlate0X, y: this.state.convergePlate0Y },
+            { x: this.state.convergePlate1X, y: this.state.convergePlate1Y },
+            { x: this.state.convergePlate2X, y: this.state.convergePlate2Y },
+        ];
+
+        for (let i = 0; i < plates.length; i++) {
+            if ((this.state.convergePlatesCompletedMask & (1 << i)) !== 0) continue;
+
+            const plate = plates[i];
+            if (plate.x < 0) continue;
+
+            const everyoneOnPlate = players.every(
+                (p) => Math.hypot(p.x - plate.x, p.y - plate.y) < this.PLATE_RADIUS,
+            );
+            if (everyoneOnPlate) {
+                this.state.convergePlatesCompletedMask |= (1 << i);
+                this.state.convergePlateCompletionOrder.push(i);
+            }
+        }
+
+        // unlocking itself (once all 3 plates are done AND the team gathers at the exit) is
+        // handled in checkExitAdvance(), using a gather radius wide enough to actually be
+        // reachable from outside the barrier's blocked zone.
     }
 
     private parseWallKey(wallKey: unknown): { x: number; y: number } | null {
