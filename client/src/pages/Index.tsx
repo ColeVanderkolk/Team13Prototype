@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { GameScreen } from "@/screens/GameScreen";
 import { ResultsOverlay } from "@/components/game/ResultsOverlay";
 import { useSounds } from "@/hooks/use-sounds";
+import { useVoiceChat } from "@/hooks/use-voice-chat";
 import { BG_MUSIC_TRACKS } from "@/lib/music";
 
 /** Build a redirect URL back to the platform with query params */
@@ -363,6 +364,17 @@ const Index = () => {
   const [bgMusicVolume, setBgMusicVolume] = useState(0.3);
   const { play: playSound } = useSounds();
 
+  // LiveKit voice chat - optional, server only sends "voiceReady" if it has credentials
+  // configured, so voiceToken simply stays null (and useVoiceChat stays idle) otherwise.
+  const [voiceToken, setVoiceToken] = useState<string | null>(null);
+  const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
+  const isMultiplayer = initPayload ? !initPayload.soloMode : false;
+  const voice = useVoiceChat({
+    token: voiceToken,
+    livekitUrl,
+    enabled: isMultiplayer && !!voiceToken,
+  });
+
   // Show results overlay when game ends (stay on /play so LiveKit voice persists)
   useEffect(() => {
     if (!gameState.isGameOver) return;
@@ -553,6 +565,11 @@ const Index = () => {
 
       gameRoom.onMessage("playerCountUpdate", (data: { count: number, required: number }) => {
         dispatch({ type: "SET_PLAYER_COUNT", payload: data });
+      });
+
+      gameRoom.onMessage("voiceReady", (data: { token: string; livekitUrl: string; roomName: string }) => {
+        setVoiceToken(data.token);
+        setLivekitUrl(data.livekitUrl);
       });
       return runSync;
     }
@@ -855,6 +872,13 @@ const Index = () => {
     );
   }
 
+  // sessionId -> slot, so the voice overlay can color-code speaking indicators the same
+  // way every other player-identity color in the game already works
+  const voiceSlotMap: Record<string, number> = {};
+  gameState.players.forEach((p, sessionId) => {
+    voiceSlotMap[sessionId] = p.slot;
+  });
+
   return (
     <div className="relative min-h-dvh w-full bg-canvas text-foreground">
       <GameScreen
@@ -877,6 +901,12 @@ const Index = () => {
         seed={gameState.seed}
         countdown={gameState.countdown}
         showResults={showResults}
+        voiceRoom={voice.room}
+        voiceIsMuted={voice.isMuted}
+        onVoiceToggleMute={voice.toggleMute}
+        voiceConnectionState={voice.connectionState}
+        voiceParticipants={voice.participants}
+        voiceSlotMap={voiceSlotMap}
         bgMusicVolume={initPayload?.bgMusicUrl ? bgMusicVolume : undefined}
         onBgMusicVolumeChange={initPayload?.bgMusicUrl ? setBgMusicVolume : undefined}
         onGameAbandoned={() => {

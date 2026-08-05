@@ -1,6 +1,7 @@
 import { Room, Client } from "colyseus";
 import { ArraySchema } from "@colyseus/schema";
 import { Collectible, GameState, GraffitiStroke, LinkedLeversState, Player } from "../schema/GameState";
+import { LiveKitService } from "../services/LiveKitService";
 import {
     ALL_WALLS,
     generateMaze,
@@ -98,6 +99,10 @@ export class GameRoom extends Room<GameState> {
     private readonly ABANDON_GAME_VOTE_WINDOW = 10000;
     private abandonTimeout: ReturnType<typeof setTimeout> | null = null;
     private readonly ABANDON_TIMEOUT = 2 * 60 * 1000;
+    // Optional real-time voice chat (LiveKit Cloud) - see LiveKitService and
+    // initializeVoiceChat(). Silently no-ops if LIVEKIT_* env vars aren't set.
+    private livekitService: LiveKitService = new LiveKitService();
+    private livekitRoomName: string | null = null;
 
     async onCreate(options: any) {
         // Replace Colyseus's default long, case-sensitive room id with a short
@@ -345,8 +350,43 @@ export class GameRoom extends Room<GameState> {
         this.buildMazeForStage(this.state.stage || 1, this.state.seed || undefined);
         this.resetPlayersToStart();
         this.generateInitialCollectibles();
-        this.calculateScores(); 
+        this.calculateScores();
 
+        // Voice only makes sense with more than one person in the room
+        if (!this.isSoloMode) {
+            await this.initializeVoiceChat();
+        }
+    }
+
+    // Mints a LiveKit access token per connected player and sends it via "voiceReady" - the
+    // client only attempts to join voice once it receives this message, so if LiveKit isn't
+    // configured (isConfigured() false), nothing is sent and the game just runs without voice.
+    private async initializeVoiceChat() {
+        if (!this.livekitService.isConfigured()) return;
+
+        // Ties the LiveKit room 1:1 to this Colyseus room, so voice never crosses between
+        // unrelated game sessions.
+        this.livekitRoomName = `fyw-${this.roomId}`;
+        const livekitUrl = process.env.LIVEKIT_URL;
+
+        const tokenPromises = Array.from(this.state.players.entries()).map(async ([sessionId, player]) => {
+            try {
+                const token = await this.livekitService.generateToken(
+                    this.livekitRoomName!,
+                    sessionId,
+                    player.name || `Player ${player.slot + 1}`,
+                );
+
+                const client = this.clients.find((c) => c.sessionId === sessionId);
+                if (client) {
+                    client.send("voiceReady", { token, livekitUrl, roomName: this.livekitRoomName });
+                }
+            } catch (error) {
+                console.error(`Failed to generate LiveKit token for session ${sessionId}:`, error);
+            }
+        });
+
+        await Promise.all(tokenPromises);
     }
 
     private startGameTimer() {
