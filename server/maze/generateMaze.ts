@@ -77,6 +77,47 @@ export function isDeadEndCell(width: number, height: number, walls: readonly num
   return getOpenNeighbors(width, height, walls, { x, y }).length === 1;
 }
 
+// The maze is "perfect" (carved with no loops - see generateMaze below), so there is exactly
+// one route between any two cells; a plain BFS from start naturally finds it, no ambiguity
+// about which of several possible paths to pick. Used to keep the secret super collectible
+// off the direct route to the exit.
+export function getPathCells(
+  width: number,
+  height: number,
+  walls: readonly number[],
+  start: Cell,
+  end: Cell,
+): Set<string> {
+  const startIndex = mazeIndex(width, start.x, start.y);
+  const endIndex = mazeIndex(width, end.x, end.y);
+  const cameFrom = new Map<number, number>();
+  const visited = new Set<number>([startIndex]);
+  const queue: Cell[] = [start];
+
+  for (let i = 0; i < queue.length; i++) {
+    const current = queue[i];
+    if (mazeIndex(width, current.x, current.y) === endIndex) break;
+
+    for (const next of getOpenNeighbors(width, height, walls, current)) {
+      const nextIndex = mazeIndex(width, next.x, next.y);
+      if (visited.has(nextIndex)) continue;
+      visited.add(nextIndex);
+      cameFrom.set(nextIndex, mazeIndex(width, current.x, current.y));
+      queue.push(next);
+    }
+  }
+
+  const path = new Set<string>();
+  let cursor: number | undefined = endIndex;
+  while (cursor !== undefined) {
+    path.add(`${cursor % width},${Math.floor(cursor / width)}`);
+    if (cursor === startIndex) break;
+    cursor = cameFrom.get(cursor);
+  }
+
+  return path;
+}
+
 function getEdgeCells(width: number, height: number): Cell[] {
   const cells: Cell[] = [];
 

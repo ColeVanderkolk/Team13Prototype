@@ -3,10 +3,12 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useTexture } from "@react-three/drei";
 import type * as Client from "colyseus.js";
 import * as THREE from "three";
-import { MazeCollectibles } from "./MazeCollectibles";
-import { ExitBarrier, FlashlightProp, MazePlayerAvatar, MazeWallPiece, USE_CUSTOM_WALL_MODELS, HAS_WALL_MODEL } from "./MazeModels";
+import { MazeCollectibles, SuperMazeCollectible } from "./MazeCollectibles";
+import { ExitBarrier, ExitProgressTriangle, FlashlightProp, MazePlayerAvatar, MazeWallPiece, USE_CUSTOM_WALL_MODELS, HAS_WALL_MODEL } from "./MazeModels";
 import { PressurePlates } from "./PressurePlates";
+import { ConvergePlates } from "./ConvergePlates";
 import { Levers } from "./Levers";
+import { LinkedLevers } from "./LinkedLevers";
 import { Keys } from "./Keys";
 import { useSounds } from "@/hooks/use-sounds";
 
@@ -42,10 +44,17 @@ const PLAYER_RADIUS = 0.23;
 const CAM_ANGLE = Math.PI * 0.25;
 const POSITION_SEND_INTERVAL = 1 / 20;
 
-// mirrors the server's leverTriggerPosition/LEVER_RADIUS (GameRoom.ts) — used only for the
-// "press E" hint, not to decide the actual pull (the server remains authoritative for that).
+// mirrors the server's leverTriggerPosition (GameRoom.ts)
 const LEVER_INTERACT_INSET = 0.35;
-const LEVER_INTERACT_RADIUS = 0.55;
+
+// Deliberately tighter than the server's own LEVER_RADIUS (0.55, GameRoom.ts): being
+// anywhere in the lever's cell is enough for the server to accept a pull, but the "press E"
+// hint (and the client's own pre-check before sending) should only fire once the player has
+// actually walked up to the lever itself, not just entered its cell.
+const LEVER_PROMPT_RADIUS = 0.32;
+// Cosine of the half-angle of the "facing" cone in front of the player (~70°, so a ~140°
+// total cone) — lets the lever be a little off-center without requiring pixel-perfect aim.
+const LEVER_FACING_MIN_DOT = 0.35;
 
 function leverTriggerPosition(cellX: number, cellY: number, wallDir: number): [number, number] {
   let offsetX = 0;
@@ -55,6 +64,48 @@ function leverTriggerPosition(cellX: number, cellY: number, wallDir: number): [n
   else if (wallDir === WALL_WEST) offsetX = -LEVER_INTERACT_INSET;
   else if (wallDir === WALL_EAST) offsetX = LEVER_INTERACT_INSET;
   return [cellX + offsetX, cellY + offsetY];
+}
+
+// Single source of truth for "is the player close enough to, and facing, an interactable
+// lever right now" — shared by the prompt (useFrame) and the actual E-key handler, so the
+// hint showing and the pull working can never disagree. Reads lever positions from a ref
+// (kept fresh every render) rather than closing over the props directly, so it can be used
+// inside a long-lived event listener without going stale when the level changes.
+function findFacingLeverIndex(
+  px: number,
+  py: number,
+  yaw: number,
+  cellX: number[],
+  cellY: number[],
+  wallDir: number[],
+): number {
+  const playerCellX = Math.round(px);
+  const playerCellY = Math.round(py);
+  const forwardX = Math.sin(yaw);
+  const forwardY = Math.cos(yaw);
+
+  for (let i = 0; i < cellX.length; i++) {
+    // must be standing in the same cell the lever is mounted in — otherwise a wall may
+    // separate the player from a trigger point that's still geometrically close by
+    if (cellX[i] !== playerCellX || cellY[i] !== playerCellY) continue;
+
+    const [triggerX, triggerY] = leverTriggerPosition(cellX[i], cellY[i], wallDir[i]);
+    const dx = triggerX - px;
+    const dy = triggerY - py;
+    const distance = Math.hypot(dx, dy);
+    if (distance >= LEVER_PROMPT_RADIUS) continue;
+
+    // skip the facing check when almost exactly on top of the trigger — direction is
+    // meaningless at ~zero distance, and this shouldn't be able to fail the interaction
+    if (distance > 0.02) {
+      const facingDot = (dx / distance) * forwardX + (dy / distance) * forwardY;
+      if (facingDot < LEVER_FACING_MIN_DOT) continue;
+    }
+
+    return i;
+  }
+
+  return -1;
 }
 
 // First-person mode (toggle with V)
@@ -101,6 +152,7 @@ const CONTROL_CODES = {
 interface MazePlayer {
   x: number;
   y: number;
+  yaw: number; // facing direction in radians, server-synced (see Player.yaw)
   sessionId: string;
   name: string;
   slot: number; // permanent color/plate/key slot, assigned once at join
@@ -124,6 +176,7 @@ interface MazeBoardProps {
   exitUnlocked: boolean;
   seed: number;
   collectibles: MazeCollectible[];
+  superCollectibles: MazeCollectible[];
   players: Map<string, MazePlayer>;
   room: Client.Room | null;
   countdown?: number;
@@ -159,6 +212,38 @@ interface MazeBoardProps {
   leverCellY: number[];
   leverWallDir: number[];
   onWrongPull?: () => void;
+
+  convergePlate0X: number;
+  convergePlate0Y: number;
+  convergePlate1X: number;
+  convergePlate1Y: number;
+  convergePlate2X: number;
+  convergePlate2Y: number;
+  convergePlatesCompletedMask: number;
+  convergePlateCompletionOrder: number[];
+
+  linkedLever0X: number;
+  linkedLever0Y: number;
+  linkedLever0WallDir: number;
+  linkedLever1X: number;
+  linkedLever1Y: number;
+  linkedLever1WallDir: number;
+  linkedLever2X: number;
+  linkedLever2Y: number;
+  linkedLever2WallDir: number;
+  linkedLever3X: number;
+  linkedLever3Y: number;
+  linkedLever3WallDir: number;
+  linkedLever4X: number;
+  linkedLever4Y: number;
+  linkedLever4WallDir: number;
+  linkedLever5X: number;
+  linkedLever5Y: number;
+  linkedLever5WallDir: number;
+  linkedLeversLitMask: number;
+  linkedLeversColumnOwner0: number;
+  linkedLeversColumnOwner1: number;
+  linkedLeversColumnOwner2: number;
 
   compassYawRef: MutableRefObject<number | null>;
   leverInRangeRef?: MutableRefObject<boolean>;
@@ -592,10 +677,6 @@ function PlayerToken({
       avatarRef.current.visible = !(isMe && firstPersonRef?.current);
     }
 
-    const moveX = visualTarget.x - groupRef.current.position.x;
-    const moveZ = visualTarget.z - groupRef.current.position.z;
-    const moving = Math.hypot(moveX, moveZ) > 0.006;
-
     if (localPositionRef) {
       groupRef.current.position.copy(desiredPosition.current);
     } else {
@@ -621,8 +702,11 @@ function PlayerToken({
 
     if (isMe && firstPersonRef?.current && fpYawRef) {
       groupRef.current.rotation.y = fpYawRef.current;
-    } else if (moving) {
-      const targetYaw = Math.atan2(moveX, moveZ);
+    } else {
+      // Server-synced facing (see Player.yaw) - smoothly turned toward rather than snapped,
+      // but no longer inferred from position deltas, which broke down for turning-in-place
+      // and reversing direction (avatar would appear to slide without ever turning).
+      const targetYaw = player.yaw;
       let deltaYaw = targetYaw - groupRef.current.rotation.y;
       while (deltaYaw > Math.PI) deltaYaw -= Math.PI * 2;
       while (deltaYaw < -Math.PI) deltaYaw += Math.PI * 2;
@@ -640,6 +724,414 @@ function PlayerToken({
   );
 }
 
+// Team hasn't signed off on the new portal exit yet - flip this to "diamond" and rebuild to
+// preview the original marker instead, no digging through git history required. Safe to
+// delete this flag and the "diamond" branch/ExitDiamondMarker entirely once everyone's settled
+// on one look.
+const EXIT_VISUAL: "portal" | "diamond" = "portal";
+
+// The original exit marker, kept around only so EXIT_VISUAL can switch back to it.
+function ExitDiamondMarker({ worldX, worldZ }: { worldX: number; worldZ: number }) {
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[worldX, 0.05, worldZ]}>
+        <ringGeometry args={[0.32, 0.7, 44]} />
+        <meshBasicMaterial color="#facc15" transparent opacity={0.88} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[worldX, 0.28, worldZ]}>
+        <octahedronGeometry args={[0.38, 0]} />
+        <meshStandardMaterial color="#facc15" emissive="#f59e0b" emissiveIntensity={0.7} roughness={0.28} />
+      </mesh>
+    </>
+  );
+}
+
+// Shared between ExitPortal and ExitPathMarker so the path triangle always lines up exactly
+// with the doorway it leads into, instead of two components guessing matching numbers.
+const PORTAL_HALF_WIDTH = CELL_SIZE / 2 - 0.14;
+const PORTAL_HALF_HEIGHT = WALL_HEIGHT / 2;
+const PORTAL_RIM = 0.06;
+// Depth from the doorway threshold back to the void's rear wall. The portal sits at the
+// threshold (THRESHOLD_OFFSET out from the cell center, toward the opening); the real solid
+// dead-end wall's inner face is (CELL_SIZE / 2 - WALL_THICKNESS / 2) out from the cell center
+// on the far side, so the full threshold-to-wall distance is THRESHOLD_OFFSET plus that - about
+// 1.59 for the current CELL_SIZE/WALL_THICKNESS. A previous, shallower value (1.3) undershot
+// that by ~0.3, leaving a strip of real (lit) floor visible beyond the void's back face -
+// this stays close to the true distance, just short enough to avoid z-fighting with the wall.
+const PORTAL_VOID_DEPTH = 1.5;
+const PORTAL_LIFT = 0.015;
+// How far past the real floor level the void box's bottom face extends, so it fully covers
+// the floor grid texture instead of leaving a sliver of it visible right at the threshold.
+const PORTAL_FLOOR_OVERLAP = 0.06;
+
+// ExitPathMarker's triangle tip, expressed relative to ExitPortal's own group origin (they're
+// two separate groups sharing the same X/Z position and rotation but different Y), used for
+// the floor path itself and as the X/Z (not Y) target for particles below.
+const PORTAL_TIP_LOCAL_Y = 0.05 - (PORTAL_HALF_HEIGHT + PORTAL_LIFT);
+const PORTAL_TIP_LOCAL_Z = -(PORTAL_VOID_DEPTH - 0.15); // just short of the void's back wall
+// Particles converge higher up than the floor-level triangle tip - matching it exactly kept
+// dragging every particle down toward that low point for most of its life, which read as
+// clumping low in the void rather than using the whole opening.
+const PORTAL_PARTICLE_TARGET_Y = PORTAL_TIP_LOCAL_Y * 0.4;
+
+const PORTAL_PARTICLE_COUNT = 22;
+// THREE.PointsMaterial only supports one fixed size for a whole points object, not
+// per-particle - so particles are split across these size tiers as they travel (see
+// PortalParticles), each its own <points>/material, to make them shrink as they recede
+// deeper into the void instead of staying a constant size regardless of depth.
+const PORTAL_SIZE_TIERS = [
+  { maxT: 0.34, size: 0.065 },
+  { maxT: 0.67, size: 0.038 },
+  { maxT: 1.01, size: 0.018 }, // >1 so a particle at t=1 still lands in the last tier
+];
+
+// Soft radial-gradient dot instead of PointsMaterial's default hard-edged square - this is
+// what actually made the particles look like glowing motes instead of flat pixelated confetti.
+function createGlowSpriteTexture(): THREE.Texture {
+  const size = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    // Solid, well-defined bright core out to 60% of the radius, then a thin soft edge -
+    // the previous gradient faded gradually from the very center, which read as an
+    // out-of-focus blur rather than a crisp glowing point.
+    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    gradient.addColorStop(0, "rgba(255,255,255,1)");
+    gradient.addColorStop(0.6, "rgba(255,255,255,1)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+  }
+  return new THREE.CanvasTexture(canvas);
+}
+
+// Motes drifting inward from the frame toward the path triangle's own tip (not just the
+// doorway's flat center) and fading out there, then respawning at the edge - the same
+// vanishing point as the floor path, so both effects read as one thing being pulled toward a
+// single point in the dark instead of two unrelated animations.
+function PortalParticles({
+  halfWidth,
+  halfHeight,
+  tipX,
+  tipY,
+  tipZ,
+}: {
+  halfWidth: number;
+  halfHeight: number;
+  tipX: number;
+  tipY: number;
+  tipZ: number;
+}) {
+  // one ref/position-buffer per size tier - a particle is written into whichever tier's
+  // buffer matches its current depth each frame (see the tier bucketing in useFrame below)
+  const tierRefs = [useRef<THREE.Points>(null), useRef<THREE.Points>(null), useRef<THREE.Points>(null)];
+  const tierPositions = useMemo(
+    () => PORTAL_SIZE_TIERS.map(() => new Float32Array(PORTAL_PARTICLE_COUNT * 3)),
+    [],
+  );
+
+  const randomSpawn = () => {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 0.55 + Math.random() * 0.45; // reaches out to the void's actual edges, not just partway
+    return {
+      baseX: Math.cos(angle) * radius * halfWidth,
+      baseY: Math.sin(angle) * radius * halfHeight,
+      // two independent sine waves per axis, different random frequency and phase per
+      // particle - the sum of two mismatched waves doesn't repeat cleanly the way a single
+      // sine (or a geometric spiral) does, which is what actually reads as organic drifting
+      // rather than a computed path
+      freqX1: 0.3 + Math.random() * 0.4,
+      freqX2: 0.9 + Math.random() * 0.6,
+      freqY1: 0.3 + Math.random() * 0.4,
+      freqY2: 0.9 + Math.random() * 0.6,
+      phaseX1: Math.random() * Math.PI * 2,
+      phaseX2: Math.random() * Math.PI * 2,
+      phaseY1: Math.random() * Math.PI * 2,
+      phaseY2: Math.random() * Math.PI * 2,
+      wobbleAmp: 0.1 + Math.random() * 0.08,
+    };
+  };
+
+  const particles = useMemo(
+    () =>
+      Array.from({ length: PORTAL_PARTICLE_COUNT }, () => ({
+        ...randomSpawn(),
+        t: Math.random(), // 0 (just spawned) .. 1 (arrived at the tip) - staggered start
+        speed: 0.045 + Math.random() * 0.045, // slow drift, not a beeline
+      })),
+    [],
+  );
+
+  const glowTexture = useMemo(() => createGlowSpriteTexture(), []);
+  useEffect(() => () => glowTexture.dispose(), [glowTexture]);
+
+  const tierMaterials = useMemo(
+    () =>
+      PORTAL_SIZE_TIERS.map(
+        (tier) =>
+          new THREE.PointsMaterial({
+            color: "#ddd6fe",
+            map: glowTexture,
+            size: tier.size,
+            transparent: true,
+            opacity: 0.95,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            sizeAttenuation: true,
+          }),
+      ),
+    [glowTexture],
+  );
+  useEffect(() => () => tierMaterials.forEach((m) => m.dispose()), [tierMaterials]);
+
+  useFrame((state, delta) => {
+    const tierCounts = [0, 0, 0];
+
+    for (let i = 0; i < PORTAL_PARTICLE_COUNT; i++) {
+      const p = particles[i];
+      p.t += p.speed * delta;
+      if (p.t >= 1) {
+        // respawn at a fresh edge position rather than snapping back visibly
+        Object.assign(p, randomSpawn());
+        p.t = 0;
+        p.speed = 0.045 + Math.random() * 0.045;
+      }
+
+      // underlying trend: drifts from this particle's spawn point down to the tip. On its
+      // own this is a straight line - the wobble below is what actually draws the path, so
+      // no particle ever travels in a literal straight line.
+      const trendX = p.baseX * (1 - p.t) + tipX * p.t;
+      const trendY = p.baseY * (1 - p.t) + tipY * p.t;
+      const trendZ = 0.02 * (1 - p.t) + tipZ * p.t;
+
+      // fades out as it nears the tip, so it still actually arrives there instead of
+      // wandering past it
+      const wobbleFalloff = 1 - p.t;
+      const time = state.clock.elapsedTime;
+      const wobbleX =
+        (Math.sin(time * p.freqX1 + p.phaseX1) + Math.sin(time * p.freqX2 + p.phaseX2) * 0.5) *
+        p.wobbleAmp *
+        wobbleFalloff;
+      const wobbleY =
+        (Math.sin(time * p.freqY1 + p.phaseY1) + Math.sin(time * p.freqY2 + p.phaseY2) * 0.5) *
+        p.wobbleAmp *
+        wobbleFalloff;
+
+      const x = trendX + wobbleX;
+      const y = trendY + wobbleY;
+      const z = trendZ;
+
+      // which size tier this particle currently belongs to, based on how far into its
+      // journey (and so how deep into the void) it is right now
+      let tierIndex = PORTAL_SIZE_TIERS.findIndex((tier) => p.t <= tier.maxT);
+      if (tierIndex === -1) tierIndex = PORTAL_SIZE_TIERS.length - 1;
+
+      const slot = tierCounts[tierIndex]++;
+      const buffer = tierPositions[tierIndex];
+      buffer[slot * 3] = x;
+      buffer[slot * 3 + 1] = y;
+      buffer[slot * 3 + 2] = z;
+    }
+
+    for (let tierIndex = 0; tierIndex < PORTAL_SIZE_TIERS.length; tierIndex++) {
+      const points = tierRefs[tierIndex].current;
+      if (!points) continue;
+      // only render however many particles actually landed in this tier this frame -
+      // the rest of the buffer is stale data from previous frames, left unrendered
+      points.geometry.setDrawRange(0, tierCounts[tierIndex]);
+      const attr = points.geometry.attributes.position as THREE.BufferAttribute;
+      attr.needsUpdate = true;
+    }
+  });
+
+  return (
+    <>
+      {PORTAL_SIZE_TIERS.map((_tier, tierIndex) => (
+        <points key={tierIndex} ref={tierRefs[tierIndex]} material={tierMaterials[tierIndex]}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[tierPositions[tierIndex], 3]} />
+          </bufferGeometry>
+        </points>
+      ))}
+    </>
+  );
+}
+
+// Floor marker leading up to the exit - an isosceles triangle narrowing to a point right at
+// the doorway threshold, reading as a path funneling toward it, rather than a plain ring.
+function ExitPathMarker({
+  worldX,
+  worldZ,
+  orientationY,
+}: {
+  worldX: number;
+  worldZ: number;
+  orientationY: number;
+}) {
+  // Base sits at the doorway threshold, flush with the inner side of the rim (matches
+  // ExitPortal's own frame inner edge); tip recedes to the back of the void box - a path
+  // converging into the darkness instead of one sitting out in the corridor.
+  const HALF_BASE = PORTAL_HALF_WIDTH - PORTAL_RIM;
+  const LENGTH = PORTAL_VOID_DEPTH;
+
+  // Built by hand (not via THREE.Shape's triangulator) so each of the 3 corners can get its
+  // own explicit color - bright violet at the base, fading to near-black at the tip, so the
+  // path dissolves into the void instead of ending in a hard-edged line.
+  const geometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    // base at the doorway threshold (shape-local Y=0), tip receding into the void
+    // (shape-local Y=+LENGTH) - the flat -90° X rotation below maps shape-local Y to
+    // group-local -Z, landing the base at Z=0 (the threshold) and the tip at Z=-LENGTH
+    // (the back of ExitPortal's void box).
+    const positionArray = new Float32Array([
+      -HALF_BASE, 0, 0,
+      HALF_BASE, 0, 0,
+      0, LENGTH, 0,
+    ]);
+    geo.setAttribute("position", new THREE.BufferAttribute(positionArray, 3));
+
+    const baseColor = new THREE.Color("#a78bfa");
+    const tipColor = new THREE.Color("#050208");
+    const colorArray = new Float32Array([
+      baseColor.r, baseColor.g, baseColor.b,
+      baseColor.r, baseColor.g, baseColor.b,
+      tipColor.r, tipColor.g, tipColor.b,
+    ]);
+    geo.setAttribute("color", new THREE.BufferAttribute(colorArray, 3));
+    geo.setIndex([0, 1, 2]);
+    return geo;
+  }, []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return (
+    <group position={[worldX, 0.05, worldZ]} rotation={[0, orientationY, 0]}>
+      <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+        <meshBasicMaterial vertexColors transparent opacity={0.65} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+// A standing doorway you walk into, rather than a floating pickup - facing whichever side
+// of the (dead-end) exit cell is actually open, so it reads as something you step through.
+function ExitPortal({
+  worldX,
+  worldZ,
+  orientationY,
+}: {
+  worldX: number;
+  worldZ: number;
+  orientationY: number;
+}) {
+  // Base color matches ExitBarrier (the wall that blocks this same exit before it's solved),
+  // so the exit reads as one consistent color identity, blocked or open. The glow itself uses
+  // a much lighter violet, not the barrier's dark "#4c1d95" - that color's luminance is so low
+  // that no reasonable emissiveIntensity pushed it over Bloom's luminanceThreshold (0.5), so it
+  // just looked flat no matter how bright the intensity number was. A lighter, more saturated
+  // violet actually crosses that threshold and blooms, which a bland/dim color can't do
+  // regardless of intensity.
+  const frameMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: "#7c3aed",
+        emissive: "#a78bfa",
+        emissiveIntensity: 1.8,
+        roughness: 0.25,
+        metalness: 0.1,
+        side: THREE.DoubleSide,
+      }),
+    [],
+  );
+  useEffect(() => () => frameMaterial.dispose(), [frameMaterial]);
+
+  // gentle brightness breathing instead of spinning - a spinning frame reads oddly next to
+  // straight corridor walls the way a spinning ring didn't. This is a self-lit material
+  // property, not a light source - it doesn't shine on anything else, so brightening it here
+  // is safe and separate from the actual exit pointLight's reach (see exitUnlocked below),
+  // which is what was leaking through walls into other corridors.
+  useFrame((state) => {
+    frameMaterial.emissiveIntensity = 1.6 + Math.sin(state.clock.elapsedTime * 1.4) * 0.5;
+  });
+
+  return (
+    <group position={[worldX, PORTAL_HALF_HEIGHT + PORTAL_LIFT, worldZ]} rotation={[0, orientationY, 0]}>
+      {/* top bar only - no bottom bar, so it reads as a doorway you walk into rather than a closed frame */}
+      <mesh position={[0, PORTAL_HALF_HEIGHT - PORTAL_RIM / 2, 0]} material={frameMaterial}>
+        <planeGeometry args={[PORTAL_HALF_WIDTH * 2, PORTAL_RIM]} />
+      </mesh>
+      <mesh position={[-(PORTAL_HALF_WIDTH - PORTAL_RIM / 2), 0, 0]} material={frameMaterial}>
+        <planeGeometry args={[PORTAL_RIM, PORTAL_HALF_HEIGHT * 2]} />
+      </mesh>
+      <mesh position={[PORTAL_HALF_WIDTH - PORTAL_RIM / 2, 0, 0]} material={frameMaterial}>
+        <planeGeometry args={[PORTAL_RIM, PORTAL_HALF_HEIGHT * 2]} />
+      </mesh>
+      {/* Void: 5 separate inward-facing planes (back/left/right/top/bottom), deliberately
+          NOT a closed box - the 6th ("near"/entrance) face is left out on purpose. A closed
+          BackSide box looks right approaching from outside (you only ever see the far inner
+          faces), but once a player actually walks inside (exitUnlocked lets them all the way
+          in), that near face would sit directly behind them, at the doorway itself - looking
+          back toward the corridor to see teammates would just show its flat black interior
+          instead of the real maze. Leaving that one face out means there's nothing there to
+          block the view back out. Extended past the actual floor level (not just down to it)
+          - the group sits above y=0 for floor clearance, so a face exactly matching the frame
+          height left a gap the real floor's grid line texture (drawn at y=0.02) showed
+          through; extending only downward (top edge unchanged) closes that. */}
+      {(() => {
+        const voidWidth = PORTAL_HALF_WIDTH * 2 - PORTAL_RIM;
+        const voidHeight = PORTAL_HALF_HEIGHT * 2 - PORTAL_RIM + PORTAL_FLOOR_OVERLAP;
+        const centerY = -PORTAL_FLOOR_OVERLAP / 2;
+        const halfW = voidWidth / 2;
+        const topY = centerY + voidHeight / 2;
+        const bottomY = centerY - voidHeight / 2;
+        const midZ = -PORTAL_VOID_DEPTH / 2;
+
+        return (
+          <>
+            {/* far wall */}
+            <mesh position={[0, centerY, -PORTAL_VOID_DEPTH]}>
+              <planeGeometry args={[voidWidth, voidHeight]} />
+              <meshBasicMaterial color="#000000" side={THREE.FrontSide} />
+            </mesh>
+            {/* left wall */}
+            <mesh position={[-halfW, centerY, midZ]} rotation={[0, Math.PI / 2, 0]}>
+              <planeGeometry args={[PORTAL_VOID_DEPTH, voidHeight]} />
+              <meshBasicMaterial color="#000000" side={THREE.FrontSide} />
+            </mesh>
+            {/* right wall */}
+            <mesh position={[halfW, centerY, midZ]} rotation={[0, -Math.PI / 2, 0]}>
+              <planeGeometry args={[PORTAL_VOID_DEPTH, voidHeight]} />
+              <meshBasicMaterial color="#000000" side={THREE.FrontSide} />
+            </mesh>
+            {/* top */}
+            <mesh position={[0, topY, midZ]} rotation={[Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[voidWidth, PORTAL_VOID_DEPTH]} />
+              <meshBasicMaterial color="#000000" side={THREE.FrontSide} />
+            </mesh>
+            {/* bottom */}
+            <mesh position={[0, bottomY, midZ]} rotation={[-Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[voidWidth, PORTAL_VOID_DEPTH]} />
+              <meshBasicMaterial color="#000000" side={THREE.FrontSide} />
+            </mesh>
+          </>
+        );
+      })()}
+      <PortalParticles
+        halfWidth={PORTAL_HALF_WIDTH - PORTAL_RIM * 2}
+        halfHeight={PORTAL_HALF_HEIGHT - PORTAL_RIM * 2}
+        tipX={0}
+        tipY={PORTAL_PARTICLE_TARGET_Y}
+        tipZ={PORTAL_TIP_LOCAL_Z}
+      />
+      {/* no extra point light here - the exit already has one (see the pointLight keyed off
+          exitUnlocked further down); a second one stacked right at the doorway, next to this
+          much larger frame/void than the diamond it replaced, was almost certainly what
+          overloaded Bloom and washed the whole thing out to white */}
+    </group>
+  );
+}
+
 export function MazeBoard({
   gridWidth,
   gridHeight,
@@ -651,6 +1143,7 @@ export function MazeBoard({
   exitUnlocked,
   seed,
   collectibles,
+  superCollectibles,
   players,
   room,
   countdown,
@@ -684,6 +1177,38 @@ export function MazeBoard({
   leverWallDir,
   onWrongPull,
 
+  convergePlate0X,
+  convergePlate0Y,
+  convergePlate1X,
+  convergePlate1Y,
+  convergePlate2X,
+  convergePlate2Y,
+  convergePlatesCompletedMask,
+  convergePlateCompletionOrder,
+
+  linkedLever0X,
+  linkedLever0Y,
+  linkedLever0WallDir,
+  linkedLever1X,
+  linkedLever1Y,
+  linkedLever1WallDir,
+  linkedLever2X,
+  linkedLever2Y,
+  linkedLever2WallDir,
+  linkedLever3X,
+  linkedLever3Y,
+  linkedLever3WallDir,
+  linkedLever4X,
+  linkedLever4Y,
+  linkedLever4WallDir,
+  linkedLever5X,
+  linkedLever5Y,
+  linkedLever5WallDir,
+  linkedLeversLitMask,
+  linkedLeversColumnOwner0,
+  linkedLeversColumnOwner1,
+  linkedLeversColumnOwner2,
+
   compassYawRef,
   leverInRangeRef,
   disabled = false,
@@ -699,6 +1224,33 @@ export function MazeBoard({
   const gridSpan = Math.max(boardWidth, boardDepth);
   const [startWorldX, startWorldZ] = cellToWorld(gridWidth, gridHeight, startX, startY);
   const [exitWorldX, exitWorldZ] = cellToWorld(gridWidth, gridHeight, exitX, exitY);
+  // Exit cells are dead ends (exactly one open side, connecting to the rest of the maze -
+  // the other three sides are solid walls). The portal needs to face that specific direction
+  // (not just "which axis"), and sit at the actual doorway threshold rather than the cell
+  // center, or its open face can end up pointing into the solid dead-end wall instead of
+  // toward the player, and its black interior can overshoot past that real wall.
+  const { exitPortalOrientationY, exitPortalWorldX, exitPortalWorldZ } = useMemo(() => {
+    if (!hasMaze) {
+      return { exitPortalOrientationY: 0, exitPortalWorldX: exitWorldX, exitPortalWorldZ: exitWorldZ };
+    }
+    const mask = mazeWalls[mazeIndex(gridWidth, exitX, exitY)] ?? ALL_WALLS;
+    // (dx, dz) toward whichever neighbor cell the exit actually opens onto - i.e. the
+    // direction the player approaches from, which is also the direction the portal's open
+    // face needs to point toward.
+    let dx = 0;
+    let dz = 0;
+    if ((mask & WALL_NORTH) === 0) dz = -1;
+    else if ((mask & WALL_SOUTH) === 0) dz = 1;
+    else if ((mask & WALL_EAST) === 0) dx = 1;
+    else if ((mask & WALL_WEST) === 0) dx = -1;
+
+    const THRESHOLD_OFFSET = CELL_SIZE / 2 - 0.12; // how far from cell center out to the opening
+    return {
+      exitPortalOrientationY: Math.atan2(dx, dz),
+      exitPortalWorldX: exitWorldX + dx * THRESHOLD_OFFSET,
+      exitPortalWorldZ: exitWorldZ + dz * THRESHOLD_OFFSET,
+    };
+  }, [hasMaze, mazeWalls, gridWidth, exitX, exitY, exitWorldX, exitWorldZ]);
   const { gl, camera } = useThree();
   const currentPlayer = currentSessionId ? players.get(currentSessionId) : undefined;
   const localPositionRef = useRef<LocalPosition>({
@@ -711,8 +1263,14 @@ export function MazeBoard({
   const noclipRef = useRef(false); // dev-only: N key - walk through walls
   const fpYawRef = useRef(0); // horizontal facing while in first person
   const fpPitchRef = useRef(0); // vertical look while in first person
+  // This player's actual facing, synced to the server so other clients can render this
+  // avatar turned the right way instead of guessing it from position deltas (see PlayerToken).
+  // First person: always the camera yaw. Overhead: last direction actually moved in, held
+  // steady while standing still rather than resetting.
+  const localYawRef = useRef(0);
   const lastSentAtRef = useRef(0);
   const lastSentPositionRef = useRef<LocalPosition>({ x: Number.NaN, y: Number.NaN });
+  const lastSentYawRef = useRef(Number.NaN);
   const lastMazeSignatureRef = useRef("");
 
   const [graffiti, setGraffiti] = useState<Array<GraffitiStrokeData & { wallKey: string }>>([]);
@@ -724,7 +1282,32 @@ export function MazeBoard({
   const pendingCounterRef = useRef(0);
 
   const prevLeversPulledInOrderRef = useRef(leversPulledInOrder);
+  const prevConvergePlatesCompletedMaskRef = useRef(convergePlatesCompletedMask);
+  const prevLinkedLeversLitMaskRef = useRef(linkedLeversLitMask);
   const drawSoundRef = useRef<HTMLAudioElement | null>(null);
+
+  // Which linked lever was just pulled (right owner or not) and a counter that increments on
+  // every attempt - drives the decoy handle-dip animation in LinkedLevers.tsx, which needs to
+  // play for EVERY pull attempt (so a wrong-owner pull doesn't look like a dead, broken lever),
+  // even though only the right owner's pull actually changes the lit state server-side.
+  const [linkedLeverPullAttempt, setLinkedLeverPullAttempt] = useState({ index: -1, key: 0 });
+
+  // Kept in sync every render (not inside an effect) so the long-lived keydown listener
+  // below can always read this level's actual lever positions through the ref, instead of
+  // closing over the leverCellX/leverCellY props directly and going stale after a level change.
+  const leverPositionsRef = useRef({ cellX: leverCellX, cellY: leverCellY, wallDir: leverWallDir });
+  leverPositionsRef.current = { cellX: leverCellX, cellY: leverCellY, wallDir: leverWallDir };
+
+  // Same idea as leverPositionsRef, for the "linkedLevers" obstacle's 3 fixed lever slots -
+  // findFacingLeverIndex is generic over any cellX/cellY/wallDir arrays, so it's reused as-is.
+  const linkedLeverCellX = [linkedLever0X, linkedLever1X, linkedLever2X, linkedLever3X, linkedLever4X, linkedLever5X];
+  const linkedLeverCellY = [linkedLever0Y, linkedLever1Y, linkedLever2Y, linkedLever3Y, linkedLever4Y, linkedLever5Y];
+  const linkedLeverWallDir = [
+    linkedLever0WallDir, linkedLever1WallDir, linkedLever2WallDir,
+    linkedLever3WallDir, linkedLever4WallDir, linkedLever5WallDir,
+  ];
+  const linkedLeverPositionsRef = useRef({ cellX: linkedLeverCellX, cellY: linkedLeverCellY, wallDir: linkedLeverWallDir });
+  linkedLeverPositionsRef.current = { cellX: linkedLeverCellX, cellY: linkedLeverCellY, wallDir: linkedLeverWallDir };
 
   // Wipe local-only, not-yet-confirmed graffiti state on every level change. Without this,
   // a stroke drawn in the last ~1.5s before the level advances stays in pendingStrokes (or
@@ -747,6 +1330,25 @@ export function MazeBoard({
     }
     prevLeversPulledInOrderRef.current = leversPulledInOrder;
   }, [leversPulledInOrder]);
+
+  // convergePlates: a plate only ever locks in (bits only ever get set, never cleared - see
+  // GameRoom.ts), so any change here is a genuine new lock-in, never a false trigger from
+  // someone stepping off.
+  useEffect(() => {
+    if (convergePlatesCompletedMask !== prevConvergePlatesCompletedMaskRef.current) {
+      playSound("plate");
+    }
+    prevConvergePlatesCompletedMaskRef.current = convergePlatesCompletedMask;
+  }, [convergePlatesCompletedMask]);
+
+  // linkedLevers: any change (light turning on OR off) is a real, server-confirmed toggle -
+  // a wrong-owner pull never changes this mask at all, so no extra guarding is needed here.
+  useEffect(() => {
+    if (linkedLeversLitMask !== prevLinkedLeversLitMaskRef.current) {
+      playSound("lightSwitch");
+    }
+    prevLinkedLeversLitMaskRef.current = linkedLeversLitMask;
+  }, [linkedLeversLitMask]);
 
 
   // Mirror the server's graffiti strokes into local state whenever the room state changes
@@ -1025,17 +1627,35 @@ export function MazeBoard({
       if (event.code === "KeyE") {
         if (disabledRef.current) return;
         if (!event.repeat) {
-          const playerX = localPositionRef.current.x;
-          const playerY = localPositionRef.current.y;
+          const { cellX, cellY, wallDir } = leverPositionsRef.current;
+          const leverIndex = findFacingLeverIndex(
+            localPositionRef.current.x,
+            localPositionRef.current.y,
+            fpYawRef.current,
+            cellX,
+            cellY,
+            wallDir,
+          );
 
-          const nearLever = leverCellX.some((cx, i) => {
-            const cy = leverCellY[i];
-            return Math.hypot(playerX - cx, playerY - cy) < LEVER_INTERACT_RADIUS;
-          });
+          if (leverIndex !== -1) {
+            room?.send("pullLever");
+            return;
+          }
 
-          if (!nearLever) return;
+          const linked = linkedLeverPositionsRef.current;
+          const linkedLeverIndex = findFacingLeverIndex(
+            localPositionRef.current.x,
+            localPositionRef.current.y,
+            fpYawRef.current,
+            linked.cellX,
+            linked.cellY,
+            linked.wallDir,
+          );
 
-          room?.send("pullLever");
+          if (linkedLeverIndex === -1) return;
+
+          setLinkedLeverPullAttempt((prev) => ({ index: linkedLeverIndex, key: prev.key + 1 }));
+          room?.send("pullLinkedLever");
         }
         return;
       }
@@ -1383,24 +2003,14 @@ export function MazeBoard({
     compassYawRef.current = firstPersonRef.current ? fpYawRef.current : null;
 
     if (leverInRangeRef) {
-      let inRange = false;
-      if (obstacleType === "levers") {
-        const { x: px, y: py } = localPositionRef.current;
-        const playerCellX = Math.round(px);
-        const playerCellY = Math.round(py);
-        for (let i = 0; i < leverCellX.length; i++) {
-          // must be standing in the same cell the lever is mounted in — otherwise a wall may
-          // separate the player from a trigger point that's still geometrically close by
-          if (leverCellX[i] !== playerCellX || leverCellY[i] !== playerCellY) continue;
-
-          const [triggerX, triggerY] = leverTriggerPosition(leverCellX[i], leverCellY[i], leverWallDir[i]);
-          if (Math.hypot(px - triggerX, py - triggerY) < LEVER_INTERACT_RADIUS) {
-            inRange = true;
-            break;
-          }
-        }
-      }
-      leverInRangeRef.current = inRange;
+      const { x: px, y: py } = localPositionRef.current;
+      const { cellX, cellY, wallDir } = leverPositionsRef.current;
+      const linked = linkedLeverPositionsRef.current;
+      leverInRangeRef.current =
+        (obstacleType === "levers" &&
+          findFacingLeverIndex(px, py, fpYawRef.current, cellX, cellY, wallDir) !== -1) ||
+        (obstacleType === "linkedLevers" &&
+          findFacingLeverIndex(px, py, fpYawRef.current, linked.cellX, linked.cellY, linked.wallDir) !== -1);
     }
 
     if (!room || !currentPlayer || !hasMaze || countdown > 0) return;
@@ -1413,6 +2023,14 @@ export function MazeBoard({
       (CONTROL_CODES.right.some((code) => pressed.has(code)) ? 1 : 0) +
       (CONTROL_CODES.left.some((code) => pressed.has(code)) ? -1 : 0);
     const moving = forward !== 0 || right !== 0;
+
+    // Facing to report to the server (see localYawRef declaration above). First person: the
+    // camera controls facing independent of movement (strafe/backpedal without turning), so
+    // this always tracks fpYawRef, moving or not. Overhead has no separate look direction, so
+    // it's set below from actual movement, and simply held steady while standing still.
+    if (firstPersonRef.current) {
+      localYawRef.current = fpYawRef.current;
+    }
 
     if (moving) {
       let moveX = 0;
@@ -1438,6 +2056,10 @@ export function MazeBoard({
       if (length > 0) {
         moveX /= length;
         moveY /= length;
+
+        if (!firstPersonRef.current) {
+          localYawRef.current = Math.atan2(moveX, moveY);
+        }
 
         const sprinting = pressed.has("ShiftLeft") || pressed.has("ShiftRight");
         const speed = sprinting ? SPRINT_SPEED : WALK_SPEED;
@@ -1467,15 +2089,24 @@ export function MazeBoard({
       localPositionRef.current.x - lastSentPositionRef.current.x,
       localPositionRef.current.y - lastSentPositionRef.current.y,
     );
+    // wrapped angular difference, so e.g. turning from just-under-PI to just-over-PI doesn't
+    // read as a huge jump - matters here since standing still and just looking around (no
+    // movement at all) should still push a fresh yaw to other clients
+    let yawDelta = localYawRef.current - lastSentYawRef.current;
+    while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
+    while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+    const turnedSinceSend = !Number.isFinite(lastSentYawRef.current) || Math.abs(yawDelta) > 0.02;
 
-    if (elapsedSinceSend >= POSITION_SEND_INTERVAL && (moving || movedSinceSend > 0.01)) {
+    if (elapsedSinceSend >= POSITION_SEND_INTERVAL && (moving || movedSinceSend > 0.01 || turnedSinceSend)) {
       const x = Math.round(localPositionRef.current.x * 1000) / 1000;
       const y = Math.round(localPositionRef.current.y * 1000) / 1000;
+      const yaw = Math.round(localYawRef.current * 1000) / 1000;
 
-      room.send("position", { x, y });
+      room.send("position", { x, y, yaw });
       lastSentAtRef.current = state.clock.elapsedTime;
       lastSentPositionRef.current.x = localPositionRef.current.x;
       lastSentPositionRef.current.y = localPositionRef.current.y;
+      lastSentYawRef.current = localYawRef.current;
     }
   });
 
@@ -1504,8 +2135,16 @@ export function MazeBoard({
         intensity={0.12}
         castShadow
       />
+      {/* short reach on purpose - these walls don't have shadow-casting set up, so a light
+          with too much distance shines straight through them into neighboring corridors
+          instead of staying contained near the doorway (true regardless of EXIT_VISUAL) */}
       {exitUnlocked && (
-        <pointLight position={[exitWorldX, 2.4, exitWorldZ]} color="#facc15" intensity={2.2 + playersAtExit * 1.5} distance={8 + playersAtExit * 2} />
+        <pointLight
+          position={[exitWorldX, 2.4, exitWorldZ]}
+          color={EXIT_VISUAL === "diamond" ? "#facc15" : "#7c3aed"}
+          intensity={1.8 + playersAtExit * 0.8}
+          distance={3.5 + playersAtExit * 0.75}
+        />
       )}
 
       <group>
@@ -1525,19 +2164,47 @@ export function MazeBoard({
             exitWorldZ={exitWorldZ}
             wallHeight={WALL_HEIGHT}
             cellSize={CELL_SIZE}
+            wallThickness={WALL_THICKNESS}
+            orientationY={exitPortalOrientationY}
+          />
+        )}
+
+        {/* converge-plates exit triangle — lights up a side (in the completed plate's color)
+            each time a plate locks in; stays mounted independent of exitUnlocked (not nested
+            under the barrier's conditional) so it can actually show green once the team
+            gathers at the exit and unlocks it, instead of vanishing the same instant it
+            would've turned green */}
+        {obstacleType === "convergePlates" && (
+          <ExitProgressTriangle
+            exitWorldX={exitWorldX}
+            exitWorldZ={exitWorldZ}
+            orientationY={exitPortalOrientationY}
+            wallHeight={WALL_HEIGHT}
+            cellSize={CELL_SIZE}
+            completionOrder={convergePlateCompletionOrder}
+            isUnlocked={exitUnlocked}
           />
         )}
 
         {exitUnlocked && (
           <>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[exitWorldX, 0.05, exitWorldZ]}>
-              <ringGeometry args={[0.32, 0.7, 44]} />
-              <meshBasicMaterial color="#facc15" transparent opacity={0.88} side={THREE.DoubleSide} />
-            </mesh>
-            <mesh position={[exitWorldX, 0.28, exitWorldZ]}>
-              <octahedronGeometry args={[0.38, 0]} />
-              <meshStandardMaterial color="#facc15" emissive="#f59e0b" emissiveIntensity={0.7} roughness={0.28} />
-            </mesh>
+            {EXIT_VISUAL === "diamond" ? (
+              <ExitDiamondMarker worldX={exitWorldX} worldZ={exitWorldZ} />
+            ) : (
+              <>
+                {/* floor marker leading up to the doorway, narrowing like a path toward it */}
+                <ExitPathMarker
+                  worldX={exitPortalWorldX}
+                  worldZ={exitPortalWorldZ}
+                  orientationY={exitPortalOrientationY}
+                />
+                <ExitPortal
+                  worldX={exitPortalWorldX}
+                  worldZ={exitPortalWorldZ}
+                  orientationY={exitPortalOrientationY}
+                />
+              </>
+            )}
           </>
         )}
 
@@ -1594,6 +2261,14 @@ export function MazeBoard({
           onCollection={() => playSound("collect")}
           seed={seed}
         />
+        <SuperMazeCollectible
+          superCollectibles={superCollectibles}
+          gridWidth={gridWidth}
+          gridHeight={gridHeight}
+          localPositionRef={localPositionRef}
+          room={room}
+          onCollection={() => playSound("key")}
+        />
 
         {orderedPlayers.map(([sessionId, player]) => (
           <PlayerToken
@@ -1623,6 +2298,7 @@ export function MazeBoard({
             pressurePlatesRequired={pressurePlatesRequired}
             obstacleType={obstacleType}
             keysCollectedMask={keysCollectedMask}
+            exitUnlocked={exitUnlocked}
             onPlateActivated = {() => playSound("plate")}
           />
         )}
@@ -1655,6 +2331,38 @@ export function MazeBoard({
             keysCollectedMask={keysCollectedMask}
             onKeyCollected={(index) => room?.send("collectKey", {index})}
             onCollection={()=>playSound("key")}
+          />
+        )}
+
+        {obstacleType === "convergePlates" && (
+          <ConvergePlates
+            plates={[
+              { gridX: convergePlate0X, gridY: convergePlate0Y },
+              { gridX: convergePlate1X, gridY: convergePlate1Y },
+              { gridX: convergePlate2X, gridY: convergePlate2Y },
+            ].filter((p) => p.gridX >= 0)}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            completedMask={convergePlatesCompletedMask}
+          />
+        )}
+
+        {obstacleType === "linkedLevers" && (
+          <LinkedLevers
+            levers={[
+              { cellX: linkedLever0X, cellY: linkedLever0Y, wallDir: linkedLever0WallDir },
+              { cellX: linkedLever1X, cellY: linkedLever1Y, wallDir: linkedLever1WallDir },
+              { cellX: linkedLever2X, cellY: linkedLever2Y, wallDir: linkedLever2WallDir },
+              { cellX: linkedLever3X, cellY: linkedLever3Y, wallDir: linkedLever3WallDir },
+              { cellX: linkedLever4X, cellY: linkedLever4Y, wallDir: linkedLever4WallDir },
+              { cellX: linkedLever5X, cellY: linkedLever5Y, wallDir: linkedLever5WallDir },
+            ]}
+            columnOwner={[linkedLeversColumnOwner0, linkedLeversColumnOwner1, linkedLeversColumnOwner2]}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            litMask={linkedLeversLitMask}
+            pullAttemptIndex={linkedLeverPullAttempt.index}
+            pullAttemptKey={linkedLeverPullAttempt.key}
           />
         )}
       </group>

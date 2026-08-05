@@ -12,6 +12,16 @@ import type * as Client from "colyseus.js";
  * Also toggleable via backtick or F9 keys.
  */
 
+// Must match OBSTACLE_POOL in GameRoom.ts - label is just for the button, value is the
+// actual obstacleType string sent to the server.
+const OBSTACLE_TYPES: Array<{ label: string; value: string }> = [
+  { label: "Plates", value: "pressurePlates" },
+  { label: "Keys", value: "keys" },
+  { label: "Levers", value: "levers" },
+  { label: "Converge", value: "convergePlates" },
+  { label: "Linked", value: "linkedLevers" },
+];
+
 interface DevStageControlsProps {
   room: Client.Room | null;
   isDevMode: boolean;
@@ -21,6 +31,9 @@ interface DevStageControlsProps {
 }
 
 export function DevStageControls({ room, isDevMode, stage, onFakeStageChange }: DevStageControlsProps) {
+  // Local-only - just reflects the last click, since the server doesn't echo this back
+  // as its own field (it's folded into the normal obstacleType once a level configures).
+  const [forcedType, setForcedType] = useState<string | null>(null);
   const isLocalhost = typeof window !== "undefined" && (
     window.location.hostname === "localhost" ||
     window.location.hostname === "127.0.0.1"
@@ -104,6 +117,34 @@ export function DevStageControls({ room, isDevMode, stage, onFakeStageChange }: 
         </button>
       </div>
       <p className="text-[9px] text-white/30">Effects only — board expands on real stage change (server-side)</p>
+
+      {isDevMode && (
+        <div className="flex flex-col gap-1 border-t border-white/10 pt-2">
+          <p className="text-[9px] text-white/30">
+            Force next level's obstacle (requires server devMode, then click Next Stage):
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {OBSTACLE_TYPES.map(({ label, value }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  const next = forcedType === value ? null : value;
+                  setForcedType(next);
+                  room?.send("devSetObstacleType", { type: next });
+                }}
+                className={`rounded border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                  forcedType === value
+                    ? "border-yellow-400/60 bg-yellow-400/20 text-yellow-300"
+                    : "border-white/20 bg-white/5 text-white/60 hover:bg-white/15"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

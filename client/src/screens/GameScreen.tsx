@@ -12,7 +12,10 @@ import { StageAnnouncement } from "@/components/game/StageAnnouncement";
 import { DevStageControls } from "@/components/game/DevStageControls";
 import { MazeBoard } from "@/components/game/MazeBoard";
 import { LeverPrompt } from "@/components/game/LeverPrompt";
+import { VoiceChatOverlay } from "@/components/game/VoiceChatOverlay";
 import { useSounds } from "@/hooks/use-sounds";
+import type { ParticipantAudioState } from "@/hooks/use-voice-chat";
+import type { Room as LiveKitRoom } from "livekit-client";
 
 // Error boundary to catch silent Canvas/Three.js crashes
 class CanvasErrorBoundary extends Component<
@@ -74,6 +77,7 @@ const TEAM_COLORS = ["#38f8b6", "#ff5a7a", "#facc15", "#a78bfa", "#fb923c", "#67
 interface PlayerState {
     x: number;
     y: number;
+    yaw: number; // facing direction in radians, server-synced (see Player.yaw)
     sessionId: string;
     name: string;
     slot: number; // permanent color/plate/key slot, assigned once at join
@@ -98,7 +102,8 @@ interface GameScreenProps {
     exitY: number;
     exitUnlocked: boolean;
     collectibles: Collectible[];
-    totalScore: number; 
+    superCollectibles: Collectible[];
+    totalScore: number;
     stage: number;
     timeRemaining: number; 
     seed: number;
@@ -136,6 +141,43 @@ interface GameScreenProps {
     leverCellY: number[];
     leverWallDir: number[];
     onWrongPull?: () => void;
+    convergePlate0X: number;
+    convergePlate0Y: number;
+    convergePlate1X: number;
+    convergePlate1Y: number;
+    convergePlate2X: number;
+    convergePlate2Y: number;
+    convergePlatesCompletedMask: number;
+    convergePlateCompletionOrder: number[];
+    linkedLever0X: number;
+    linkedLever0Y: number;
+    linkedLever0WallDir: number;
+    linkedLever1X: number;
+    linkedLever1Y: number;
+    linkedLever1WallDir: number;
+    linkedLever2X: number;
+    linkedLever2Y: number;
+    linkedLever2WallDir: number;
+    linkedLever3X: number;
+    linkedLever3Y: number;
+    linkedLever3WallDir: number;
+    linkedLever4X: number;
+    linkedLever4Y: number;
+    linkedLever4WallDir: number;
+    linkedLever5X: number;
+    linkedLever5Y: number;
+    linkedLever5WallDir: number;
+    linkedLeversLitMask: number;
+    linkedLeversColumnOwner0: number;
+    linkedLeversColumnOwner1: number;
+    linkedLeversColumnOwner2: number;
+
+    voiceRoom: LiveKitRoom | null;
+    voiceIsMuted: boolean;
+    onVoiceToggleMute: () => void;
+    voiceConnectionState: "disconnected" | "connecting" | "connected";
+    voiceParticipants: Map<string, ParticipantAudioState>;
+    voiceSlotMap: Record<string, number>;
 }
 
 /** Horizontal slider styled to match the in-game score bar (cyan frame + navy→white gradient fill). */
@@ -226,6 +268,7 @@ export const GameScreen = ({
     exitY,
     exitUnlocked,
     collectibles,
+    superCollectibles,
     totalScore,
     stage,
     timeRemaining,
@@ -263,6 +306,42 @@ export const GameScreen = ({
     leverCellX,
     leverCellY,
     leverWallDir,
+    convergePlate0X,
+    convergePlate0Y,
+    convergePlate1X,
+    convergePlate1Y,
+    convergePlate2X,
+    convergePlate2Y,
+    convergePlatesCompletedMask,
+    convergePlateCompletionOrder,
+    linkedLever0X,
+    linkedLever0Y,
+    linkedLever0WallDir,
+    linkedLever1X,
+    linkedLever1Y,
+    linkedLever1WallDir,
+    linkedLever2X,
+    linkedLever2Y,
+    linkedLever2WallDir,
+    linkedLever3X,
+    linkedLever3Y,
+    linkedLever3WallDir,
+    linkedLever4X,
+    linkedLever4Y,
+    linkedLever4WallDir,
+    linkedLever5X,
+    linkedLever5Y,
+    linkedLever5WallDir,
+    linkedLeversLitMask,
+    linkedLeversColumnOwner0,
+    linkedLeversColumnOwner1,
+    linkedLeversColumnOwner2,
+    voiceRoom,
+    voiceIsMuted,
+    onVoiceToggleMute,
+    voiceConnectionState,
+    voiceParticipants,
+    voiceSlotMap,
 }: GameScreenProps) => {
     const pendingInputsRef = useRef<Map<number, { x: number, y: number }>>(new Map());
     const seqCounterRef = useRef(0);
@@ -322,7 +401,9 @@ export const GameScreen = ({
     useEffect(() => {
       if (stage >prevStage.current) {
         playSound("progress");
+        noiseFieldRef.current?.flash();
       }
+      prevStage.current = stage;
     }, [stage]);
 
   return (
@@ -798,6 +879,7 @@ export const GameScreen = ({
           exitUnlocked={exitUnlocked}
           seed={seed}
           collectibles={collectibles}
+          superCollectibles={superCollectibles}
           players={players}
           room={room}
           countdown={countdown}
@@ -825,6 +907,36 @@ export const GameScreen = ({
           leverCellX={leverCellX}
           leverCellY={leverCellY}
           leverWallDir={leverWallDir}
+          convergePlate0X={convergePlate0X}
+          convergePlate0Y={convergePlate0Y}
+          convergePlate1X={convergePlate1X}
+          convergePlate1Y={convergePlate1Y}
+          convergePlate2X={convergePlate2X}
+          convergePlate2Y={convergePlate2Y}
+          convergePlatesCompletedMask={convergePlatesCompletedMask}
+          convergePlateCompletionOrder={convergePlateCompletionOrder}
+          linkedLever0X={linkedLever0X}
+          linkedLever0Y={linkedLever0Y}
+          linkedLever0WallDir={linkedLever0WallDir}
+          linkedLever1X={linkedLever1X}
+          linkedLever1Y={linkedLever1Y}
+          linkedLever1WallDir={linkedLever1WallDir}
+          linkedLever2X={linkedLever2X}
+          linkedLever2Y={linkedLever2Y}
+          linkedLever2WallDir={linkedLever2WallDir}
+          linkedLever3X={linkedLever3X}
+          linkedLever3Y={linkedLever3Y}
+          linkedLever3WallDir={linkedLever3WallDir}
+          linkedLever4X={linkedLever4X}
+          linkedLever4Y={linkedLever4Y}
+          linkedLever4WallDir={linkedLever4WallDir}
+          linkedLever5X={linkedLever5X}
+          linkedLever5Y={linkedLever5Y}
+          linkedLever5WallDir={linkedLever5WallDir}
+          linkedLeversLitMask={linkedLeversLitMask}
+          linkedLeversColumnOwner0={linkedLeversColumnOwner0}
+          linkedLeversColumnOwner1={linkedLeversColumnOwner1}
+          linkedLeversColumnOwner2={linkedLeversColumnOwner2}
           onWrongPull={() => playSound("error")}
           compassYawRef={compassYawRef}
           leverInRangeRef={leverInRangeRef}
@@ -844,6 +956,15 @@ export const GameScreen = ({
       <NoiseFieldOverlay ref={noiseFieldRef} resolutionScale={0.8} />
       <StageAnnouncement stage={effectiveStage} />
       <DevStageControls room={room} isDevMode={isDevMode} stage={effectiveStage} onFakeStageChange={setFakeStage} />
+
+      <VoiceChatOverlay
+        participants={voiceParticipants}
+        isMuted={voiceIsMuted}
+        onToggleMute={onVoiceToggleMute}
+        connectionState={voiceConnectionState}
+        room={voiceRoom}
+        slotMap={voiceSlotMap}
+      />
 
     </div>
   );

@@ -103,6 +103,7 @@ type PressurePlatesProps = {
     pressurePlatesRequired: number;
     obstacleType: string;
     keysCollectedMask: number;
+    exitUnlocked: boolean; // once true, every plate stays lit permanently (see isActive below)
     onPlateActivated: () => void;
 };
 
@@ -116,6 +117,7 @@ export function PressurePlates({
     pressurePlatesRequired,
     obstacleType,
     keysCollectedMask,
+    exitUnlocked,
     onPlateActivated
 }: PressurePlatesProps) {
     if (pressurePlatesRequired === 0 || plates.length === 0) return null;
@@ -138,10 +140,13 @@ export function PressurePlates({
                     : false;
 
                 const hasKey = obstacleType === "keys"
-                    ? (keysCollectedMask & (1 << idx)) !== 0 
-                    : true; 
-                
-                const isActive = isOnPlate && hasKey; 
+                    ? (keysCollectedMask & (1 << idx)) !== 0
+                    : true;
+
+                // once the exit is unlocked, every plate was necessarily active at that exact
+                // moment (that's the unlock condition) - stay lit permanently from then on,
+                // same as convergePlates, instead of dimming the instant someone steps off
+                const isActive = exitUnlocked || (isOnPlate && hasKey);
 
                 return (
                     <Plate 
