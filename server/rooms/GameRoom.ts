@@ -69,6 +69,9 @@ export class GameRoom extends Room<GameState> {
     private readonly OBSTACLE_POOL = ["pressurePlates", "keys", "levers", "convergePlates", "linkedLevers"];
     // Dev-only override set via the "devSetObstacleType" message - see configureLevelObjective.
     private devForcedObstacleType: string | null = null;
+    // linkedLevers is noticeably harder than the other obstacles, so it's limited to once per
+    // game (across all 8 levels) instead of just "not twice in a row" like the others.
+    private linkedLeversUsedThisGame = false;
     private gameStartTime: number = 0;
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
@@ -943,11 +946,18 @@ export class GameRoom extends Room<GameState> {
         // pick one obstacle type randomly from the pool each level, never the same one twice
         // in a row - unless a dev override is set (see the "devSetObstacleType" message), which
         // always wins so a specific obstacle can be tested without waiting on rotation.
-        const choices = this.previousObstacleType
+        // linkedLevers is also excluded entirely once it's already appeared once this game.
+        let choices = this.previousObstacleType
             ? this.OBSTACLE_POOL.filter((type) => type !== this.previousObstacleType)
             : this.OBSTACLE_POOL;
+        if (this.linkedLeversUsedThisGame) {
+            choices = choices.filter((type) => type !== "linkedLevers");
+        }
         this.state.obstacleType = this.devForcedObstacleType ?? choices[Math.floor(Math.random() * choices.length)];
         this.previousObstacleType = this.state.obstacleType;
+        if (this.state.obstacleType === "linkedLevers") {
+            this.linkedLeversUsedThisGame = true;
+        }
         console.log("obstacleType set to:", this.state.obstacleType);
 
         if (this.state.obstacleType === "pressurePlates") {
