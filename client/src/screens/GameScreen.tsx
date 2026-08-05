@@ -12,10 +12,7 @@ import { StageAnnouncement } from "@/components/game/StageAnnouncement";
 import { DevStageControls } from "@/components/game/DevStageControls";
 import { MazeBoard } from "@/components/game/MazeBoard";
 import { LeverPrompt } from "@/components/game/LeverPrompt";
-import { VoiceChatOverlay } from "@/components/game/VoiceChatOverlay";
 import { useSounds } from "@/hooks/use-sounds";
-import type { ParticipantAudioState } from "@/hooks/use-voice-chat";
-import type { Room as LiveKitRoom } from "livekit-client";
 
 // Error boundary to catch silent Canvas/Three.js crashes
 class CanvasErrorBoundary extends Component<
@@ -171,13 +168,6 @@ interface GameScreenProps {
     linkedLeversColumnOwner0: number;
     linkedLeversColumnOwner1: number;
     linkedLeversColumnOwner2: number;
-
-    voiceRoom: LiveKitRoom | null;
-    voiceIsMuted: boolean;
-    onVoiceToggleMute: () => void;
-    voiceConnectionState: "disconnected" | "connecting" | "connected";
-    voiceParticipants: Map<string, ParticipantAudioState>;
-    voiceSlotMap: Record<string, number>;
 }
 
 /** Horizontal slider styled to match the in-game score bar (cyan frame + navy→white gradient fill). */
@@ -336,12 +326,6 @@ export const GameScreen = ({
     linkedLeversColumnOwner0,
     linkedLeversColumnOwner1,
     linkedLeversColumnOwner2,
-    voiceRoom,
-    voiceIsMuted,
-    onVoiceToggleMute,
-    voiceConnectionState,
-    voiceParticipants,
-    voiceSlotMap,
 }: GameScreenProps) => {
     const pendingInputsRef = useRef<Map<number, { x: number, y: number }>>(new Map());
     const seqCounterRef = useRef(0);
@@ -956,15 +940,6 @@ export const GameScreen = ({
       <NoiseFieldOverlay ref={noiseFieldRef} resolutionScale={0.8} />
       <StageAnnouncement stage={effectiveStage} />
       <DevStageControls room={room} isDevMode={isDevMode} stage={effectiveStage} onFakeStageChange={setFakeStage} />
-
-      <VoiceChatOverlay
-        participants={voiceParticipants}
-        isMuted={voiceIsMuted}
-        onToggleMute={onVoiceToggleMute}
-        connectionState={voiceConnectionState}
-        room={voiceRoom}
-        slotMap={voiceSlotMap}
-      />
 
     </div>
   );
