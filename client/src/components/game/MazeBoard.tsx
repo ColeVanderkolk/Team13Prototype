@@ -507,8 +507,8 @@ function TexturedMazeFloor({ width, depth }: { width: number; depth: number }) {
   );
 }
 
-function MazeFloor({ width, depth }: { width: number; depth: number }) {
-  if (FLOOR_TEXTURE_URL) {
+function MazeFloor({ width, depth, showArt = true }: { width: number; depth: number; showArt?: boolean }) {
+  if (FLOOR_TEXTURE_URL && showArt) {
     return <TexturedMazeFloor width={width} depth={depth} />;
   }
 
@@ -1259,6 +1259,7 @@ export function MazeBoard({
   });
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const [leverWrongPullKey, setLeverWrongPullKey] = useState(0);
+  const [showArt, setShowArt] = useState(true); // dev-only: T key - swap custom wall/floor art for plain colors
   const firstPersonRef = useRef(true); // toggled with the V key
   const noclipRef = useRef(false); // dev-only: N key - walk through walls
   const fpYawRef = useRef(0); // horizontal facing while in first person
@@ -1622,6 +1623,11 @@ export function MazeBoard({
         } else if (document.pointerLockElement === canvas) {
           document.exitPointerLock();
         }
+        return;
+      }
+      if (event.code === "KeyT") {
+        if (!viewToggleEnabled) return; // wall/floor art toggle is a dev-mode feature
+        setShowArt((prev) => !prev);
         return;
       }
       if (event.code === "KeyE") {
@@ -2148,7 +2154,7 @@ export function MazeBoard({
       )}
 
       <group>
-        <MazeFloor width={boardWidth + WALL_THICKNESS} depth={boardDepth + WALL_THICKNESS} />
+        <MazeFloor width={boardWidth + WALL_THICKNESS} depth={boardDepth + WALL_THICKNESS} showArt={showArt} />
 
         <gridHelper args={[gridSpan, Math.max(gridWidth, gridHeight), "#1f9af0", "#172033"]} position={[0, 0.02, 0]} />
 
@@ -2215,7 +2221,7 @@ export function MazeBoard({
           // colors meet, their coplanar faces z-fight. A tiny per-quadrant thickness
           // difference (up to ~12mm in game units) separates the faces invisibly.
           const alongX = wall.size[0] > wall.size[2];
-          const thickness = (alongX ? wall.size[2] : wall.size[0]) + (USE_CUSTOM_WALL_MODELS ? 0 : quadrant * 0.004);
+          const thickness = (alongX ? wall.size[2] : wall.size[0]) + (USE_CUSTOM_WALL_MODELS && showArt ? 0 : quadrant * 0.004);
           const adjustedSize: [number, number, number] = alongX
             ? [wall.size[0], wall.size[1], thickness]
             : [thickness, wall.size[1], wall.size[2]];
@@ -2227,6 +2233,7 @@ export function MazeBoard({
               wallVariant={quadrant}
               color={wallColor}
               emissive={wallEmissive}
+              showArt={showArt}
             />
           );
         })}

@@ -55,14 +55,16 @@ export function MazeWallPiece({
   wallVariant = 0,
   color = "#7dd3fc",
   emissive = "#0ea5e9",
+  showArt = true,
 }: {
   position: Vec3;
   size: Vec3;
   wallVariant?: number;
   color?: string;
   emissive?: string;
+  showArt?: boolean;
 }) {
-  const wallModelUrl = WALL_MODEL_URLS[wallVariant] || WALL_MODEL_URL;
+  const wallModelUrl = showArt ? WALL_MODEL_URLS[wallVariant] || WALL_MODEL_URL : "";
 
   if (wallModelUrl) {
     const alongX = size[0] >= size[2];
