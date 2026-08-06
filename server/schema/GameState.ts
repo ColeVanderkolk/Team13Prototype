@@ -27,15 +27,16 @@ export class Collectible extends Schema {
 // fields, and GameState was already right at that ceiling — every nested Schema gets its
 // own separate 64-field budget, so this is the fix rather than trimming fields elsewhere.
 //
-// A real Lights Out puzzle: 6 levers (labeled A-F, indices 0-5) wired together per
-// LINKED_LEVER_TOGGLE_SETS in GameRoom.ts - a randomly-searched graph (not a simple grid),
-// chosen because it has exactly ONE winning combination in the entire 64-state space
-// (verified by brute force), so there's no shortcut like "everyone pull once" or "everyone
-// pull their same side". Column i (levers {i, i+3}) is owned by player slot columnOwner[i] -
-// a random permutation of the 3 slots, re-rolled every level, so who ends up needing to pull
-// both of their levers vs. just one isn't a fixed pattern across playthroughs. The wiring
-// itself never changes (same as the real toy never changing its wiring); only where the
-// levers physically sit AND who owns which column do.
+// A real Lights Out puzzle: 6 levers (labeled A-F, indices 0-5), a 2x3 grid where each
+// lever toggles itself + orthogonal neighbors - except one (F) is fully isolated, toggling
+// only its own light and untouched by anyone else's pull, making it mandatory. See
+// LINKED_LEVER_TOGGLE_SETS in GameRoom.ts for the exact table (brute-force verified:
+// solvable in 3 pulls, no "everyone pull once" or "everyone pull their same side" shortcut).
+// Column i (levers {i, i+3}) is owned by player slot columnOwner[i] - a random permutation
+// of the 3 slots, re-rolled every level, so who ends up owning the mandatory isolated lever
+// isn't a fixed pattern across playthroughs. The wiring itself never changes (same as the
+// real toy never changing its wiring); only where the levers physically sit AND who owns
+// which column do.
 export class LinkedLeversState extends Schema {
     @type("number") lever0X: number = -1;
     @type("number") lever0Y: number = -1;

@@ -1275,22 +1275,22 @@ export class GameRoom extends Room<GameState> {
         }
     }
 
-    // Toggle wiring for this obstacle's 6 levers (labeled A-F, indices 0-5). This is a
-    // randomly-searched graph (not a simple grid), found by brute-forcing ~200k candidates
-    // for one with NO easy shortcut. Verified: pulling every lever once fails safely, none
-    // of the 8 "one pull per column" combos solve it, and there is exactly ONE winning
-    // combination in the entire 64-state space - pull A, B, C, and E (leave D and F alone) -
-    // requiring 4 total pulls, the most of any design tried. Every pull is self-canceling
-    // (pulling the same lever again undoes just that pull) and all 64 states are reachable
-    // from any other, so there's no dead end the team can get stuck in - just more trial and
-    // error needed to land on the one combination that works.
+    // Toggle wiring for this obstacle's 6 levers (labeled A-F, indices 0-5): the same 2x3
+    // grid shape as the original design (each lever toggles itself + orthogonal neighbors:
+    //   A B C
+    //   D E F
+    // ), except F is fully isolated - it toggles only itself, and no other lever's pull
+    // touches F's light either. That makes F mandatory: there's no way to light it except by
+    // pulling it directly. Brute-force verified: solvable in 3 total pulls (C, D, and F -
+    // nothing else touched), F is required in every minimal solution, pulling every lever
+    // once fails safely, and none of the 8 "one pull per column" combos solve it either.
     private static readonly LINKED_LEVER_TOGGLE_SETS: number[][] = [
-        [0, 1, 2, 3], // A
-        [0, 1, 4], // B
-        [0, 2, 4], // C
-        [0, 3, 5], // D
-        [1, 2, 4, 5], // E
-        [3, 4, 5], // F
+        [0, 1, 3], // A
+        [0, 1, 2, 4], // B
+        [1, 2], // C
+        [0, 3, 4], // D
+        [1, 3, 4], // E
+        [5], // F
     ];
 
     private linkedLeverTriggerPosition(index: number) {
