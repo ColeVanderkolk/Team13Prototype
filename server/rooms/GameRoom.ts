@@ -9,6 +9,10 @@ import {
     isDeadEndCell,
     mazeIndex,
     wallForDirection,
+    WALL_NORTH,
+    WALL_EAST,
+    WALL_SOUTH,
+    WALL_WEST,
 } from "../maze/generateMaze";
 
 const WALL_DIRECTIONS = [
@@ -807,23 +811,37 @@ export class GameRoom extends Room<GameState> {
         return Math.hypot(player.x - this.state.exitX, player.y - this.state.exitY) < 0.35;
     }
 
+    // Exit cells are dead ends - exactly one side opens onto the rest of the maze, the other
+    // three are solid walls (see the client's exitPortalOrientationY, which finds the same
+    // direction for the portal's facing). Returns that direction as a unit (dx, dy).
+    private getExitApproachDirection(): { dx: number; dy: number } {
+        const mask = this.state.mazeWalls[mazeIndex(this.state.gridWidth, this.state.exitX, this.state.exitY)] ?? ALL_WALLS;
+        if ((mask & WALL_NORTH) === 0) return { dx: 0, dy: -1 };
+        if ((mask & WALL_SOUTH) === 0) return { dx: 0, dy: 1 };
+        if ((mask & WALL_EAST) === 0) return { dx: 1, dy: 0 };
+        if ((mask & WALL_WEST) === 0) return { dx: -1, dy: 0 };
+        return { dx: 0, dy: 0 };
+    }
+
+    // A raw radius around the exit's center can't tell the real entrance corridor apart from
+    // some unrelated corridor that happens to run alongside the exit cell's other (walled-off)
+    // sides - those are just as close in world distance despite being a whole maze journey
+    // away. Projecting onto the approach direction rules those out: only positions actually
+    // offset toward the door pass, not ones beside or behind it.
+    private isOnExitApproachSide(player: Player): boolean {
+        const { dx, dy } = this.getExitApproachDirection();
+        if (dx === 0 && dy === 0) return true; // no recorded opening (shouldn't happen) - don't block
+        const dot = (player.x - this.state.exitX) * dx + (player.y - this.state.exitY) * dy;
+        return dot > 0.5;
+    }
+
     private checkExitAdvance() {
         if (!this.state.exitUnlocked) {
-            if (this.state.obstacleType === "keys") {
-                if (!this.state.allKeysCollected) {
-                    this.state.playersAtExit = 0;
-                    return;
-                }
-
-                const players = Array.from(this.state.players.values());
-                if (players.length === 0) return;
-                this.state.playersAtExit = players.filter(p => this.isAtExit(p)).length;
-                if (this.state.playersAtExit >= players.length) {
-                    this.state.exitUnlocked = true;
-                }
-            return;
-
-            }
+            // "keys" has no special branch here on purpose - it actually unlocks via
+            // checkPressurePlates() (a player must be standing on their matching plate AND
+            // holding the matching key), which runs before this on every accepted move. This
+            // just falls through to the generic playersAtExit reset below, same as
+            // pressurePlates/levers/linkedLevers.
 
             if (this.state.obstacleType === "convergePlates") {
                 if (this.state.convergePlatesCompletedMask !== 0b111) {
@@ -833,11 +851,17 @@ export class GameRoom extends Room<GameState> {
 
                 // all 3 plates locked in - now gate on the team actually gathering at the
                 // door (using CONVERGE_EXIT_GATHER_RADIUS, not isAtExit's 0.35, since the
-                // barrier is still up and physically blocks anyone from getting that close)
+                // barrier is still up and physically blocks anyone from getting that close).
+                // Also requires actually being on the entrance side (see
+                // isOnExitApproachSide) - raw distance alone can't rule out an unrelated
+                // corridor that happens to run alongside the exit cell's other walled-off
+                // sides, which would otherwise count as "gathered" without the real journey.
                 const players = Array.from(this.state.players.values());
                 if (players.length === 0) return;
                 this.state.playersAtExit = players.filter(
-                    (p) => Math.hypot(p.x - this.state.exitX, p.y - this.state.exitY) < this.CONVERGE_EXIT_GATHER_RADIUS,
+                    (p) =>
+                        Math.hypot(p.x - this.state.exitX, p.y - this.state.exitY) < this.CONVERGE_EXIT_GATHER_RADIUS &&
+                        this.isOnExitApproachSide(p),
                 ).length;
                 if (this.state.playersAtExit >= players.length) {
                     this.state.exitUnlocked = true;
