@@ -1058,9 +1058,15 @@ export class GameRoom extends Room<GameState> {
         lv.lever4X = picks[4]?.x ?? -1; lv.lever4Y = picks[4]?.y ?? -1; lv.lever4WallDir = picks[4]?.wallDir ?? 0;
         lv.lever5X = picks[5]?.x ?? -1; lv.lever5Y = picks[5]?.y ?? -1; lv.lever5WallDir = picks[5]?.wallDir ?? 0;
 
+        // randomize which of the 6 grid positions is this level's isolated (mandatory,
+        // self-only) lever - see LINKED_LEVER_SAFE_ISOLATED_INDICES for why only 4 of the 6
+        // are eligible - so the solution's actual shape changes level to level, not just who
+        // owns which lever.
+        const safeIndices = GameRoom.LINKED_LEVER_SAFE_ISOLATED_INDICES;
+        this.linkedLeversIsolatedIndex = safeIndices[Math.floor(Math.random() * safeIndices.length)];
+
         // randomize which player owns which grid column, so the "who sits out vs who pulls"
-        // pattern isn't the same every time this obstacle comes up - only the adjacency math
-        // (fixed) determines the actual solution, ownership is just who's allowed to act
+        // pattern isn't the same every time this obstacle comes up either
         const columnOwners = [0, 1, 2];
         for (let i = columnOwners.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -1275,23 +1281,41 @@ export class GameRoom extends Room<GameState> {
         }
     }
 
-    // Toggle wiring for this obstacle's 6 levers (labeled A-F, indices 0-5): the same 2x3
-    // grid shape as the original design (each lever toggles itself + orthogonal neighbors:
+    // Base 2x3 grid shape (labeled A-F, indices 0-5) this obstacle's 6 levers form:
     //   A B C
     //   D E F
-    // ), except F is fully isolated - it toggles only itself, and no other lever's pull
-    // touches F's light either. That makes F mandatory: there's no way to light it except by
-    // pulling it directly. Brute-force verified: solvable in 3 total pulls (C, D, and F -
-    // nothing else touched), F is required in every minimal solution, pulling every lever
-    // once fails safely, and none of the 8 "one pull per column" combos solve it either.
-    private static readonly LINKED_LEVER_TOGGLE_SETS: number[][] = [
-        [0, 1, 3], // A
-        [0, 1, 2, 4], // B
-        [1, 2], // C
-        [0, 3, 4], // D
-        [1, 3, 4], // E
-        [5], // F
+    // Each lever normally toggles itself + its orthogonal neighbors - except one position,
+    // this level's "isolated" lever, which toggles only itself and is untouched by anyone
+    // else's pull (making it mandatory - see getLinkedLeverToggleSet). Which position is
+    // isolated is randomized every level (see configureLinkedLevers) instead of always being
+    // the same one, so the whole solution shape - not just who owns which lever - changes
+    // between playthroughs. Only positions 0 (A), 2 (C), 3 (D), 5 (F) are ever chosen -
+    // brute-force verified that isolating either "middle" position (1/B or 4/E) accidentally
+    // creates a one-pull-per-column shortcut, so those two are permanently excluded.
+    private static readonly LINKED_LEVER_NEIGHBORS: number[][] = [
+        [1, 3], // A: B, D
+        [0, 2, 4], // B: A, C, E
+        [1, 5], // C: B, F
+        [0, 4], // D: A, E
+        [1, 3, 5], // E: B, D, F
+        [2, 4], // F: C, E
     ];
+    private static readonly LINKED_LEVER_SAFE_ISOLATED_INDICES = [0, 2, 3, 5];
+    // This level's isolated lever index (0-5) - set in configureLinkedLevers, never synced
+    // to clients (same as the wiring itself, this stays server-only/hidden).
+    private linkedLeversIsolatedIndex = 0;
+
+    // Pulling `index` toggles itself, plus its grid neighbors - unless it IS this level's
+    // isolated lever (toggles only itself), or one of its neighbors happens to be the
+    // isolated lever (that neighbor is skipped, since nothing may ever touch its light
+    // except its own pull).
+    private getLinkedLeverToggleSet(index: number): number[] {
+        if (index === this.linkedLeversIsolatedIndex) return [index];
+        const neighbors = GameRoom.LINKED_LEVER_NEIGHBORS[index].filter(
+            (n) => n !== this.linkedLeversIsolatedIndex,
+        );
+        return [index, ...neighbors];
+    }
 
     private linkedLeverTriggerPosition(index: number) {
         const lv = this.state.linkedLevers;
@@ -1349,7 +1373,7 @@ export class GameRoom extends Room<GameState> {
         }
         if (nearestIndex === -1) return; // nothing in reach (or not this player's lever)
 
-        for (const bit of GameRoom.LINKED_LEVER_TOGGLE_SETS[nearestIndex]) {
+        for (const bit of this.getLinkedLeverToggleSet(nearestIndex)) {
             lv.litMask ^= (1 << bit);
         }
 
