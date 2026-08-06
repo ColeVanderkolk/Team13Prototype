@@ -59,7 +59,7 @@ export class GameRoom extends Room<GameState> {
     // Each one's value compounds off how many have been collected so far this game (never
     // resets between levels, only when a brand new game starts - there's no persistence
     // beyond a single room's lifetime).
-    private readonly SUPER_COLLECTIBLE_BASE_SCORE = 200;
+    private readonly SUPER_COLLECTIBLE_BASE_SCORE = 500;
     private readonly SUPER_COLLECTIBLE_GROWTH = 1.5;
     private superCollectiblesCollectedCount = 0;
     private superCollectibleSpawnedThisLevel = false; // resets each level in buildMazeForStage
@@ -551,8 +551,9 @@ export class GameRoom extends Room<GameState> {
         }
 
         // score was already computed and stored at spawn time (see trySpawnSuperCollectible),
-        // so what's awarded here always matches what was actually on the object
-        this.state.totalScore += superCollectible.score * this.state.scoreMultiplier;
+        // so what's awarded here always matches what was actually on the object. Deliberately
+        // NOT multiplied by scoreMultiplier - only regular collectibles get that boost.
+        this.state.totalScore += superCollectible.score;
         this.superCollectiblesCollectedCount += 1;
         this.state.superCollectibles.splice(superIndex, 1);
         console.log(
@@ -1511,9 +1512,10 @@ export class GameRoom extends Room<GameState> {
     private advanceLevel() {
         console.log("Advancing to stage", this.state.stage + 1);
 
-        // Clearing a level is worth points (x stage, x current streak multiplier) -
-        // previously levels paid nothing, so score only measured collectible farming
-        this.state.totalScore += this.LEVEL_CLEAR_SCORE * this.state.stage * this.state.scoreMultiplier;
+        // Clearing a level is worth points (x stage) - previously levels paid nothing, so
+        // score only measured collectible farming. Deliberately NOT multiplied by
+        // scoreMultiplier - only regular collectibles get that boost.
+        this.state.totalScore += this.LEVEL_CLEAR_SCORE * this.state.stage;
 
         // Streak check: at least half this level's collectibles keeps the streak
         // climbing (capped); anything less resets it to x1. Obstacles aren't part of
