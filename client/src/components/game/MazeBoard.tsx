@@ -545,6 +545,9 @@ function TexturedSkySphere({ radius }: { radius: number }) {
 }
 
 function MazeSky({ radius }: { radius: number }) {
+  // Deliberately NOT gated by showArt (unlike walls/floor) - always shown regardless of the
+  // T toggle. sky.jpg is a genuinely huge (37MB) file though, so it's still the likely cause
+  // of the startup freeze - see the file-size note near SKY_TEXTURE_URL for the real fix.
   if (!SKY_TEXTURE_URL) return null;
   return <TexturedSkySphere radius={radius} />;
 }
@@ -1259,7 +1262,10 @@ export function MazeBoard({
   });
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const [leverWrongPullKey, setLeverWrongPullKey] = useState(0);
-  const [showArt, setShowArt] = useState(true); // dev-only: T key - swap custom wall/floor art for plain colors
+  // Starts off (plain colors, no custom wall models/floor texture) so the game loads fast
+  // instead of blocking on those asset downloads right away - press T anytime to load and
+  // switch to the textured look. Available to every player, not just dev mode.
+  const [showArt, setShowArt] = useState(false);
   const firstPersonRef = useRef(true); // toggled with the V key
   const noclipRef = useRef(false); // dev-only: N key - walk through walls
   const fpYawRef = useRef(0); // horizontal facing while in first person
@@ -1626,7 +1632,8 @@ export function MazeBoard({
         return;
       }
       if (event.code === "KeyT") {
-        if (!viewToggleEnabled) return; // wall/floor art toggle is a dev-mode feature
+        // available to every player - loads/shows the textured wall+floor art on demand,
+        // unlike N/V below which stay dev-only
         setShowArt((prev) => !prev);
         return;
       }

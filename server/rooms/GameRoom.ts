@@ -79,12 +79,6 @@ export class GameRoom extends Room<GameState> {
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
     private readonly PLATE_RADIUS = 0.2;
-    // "gathered at the exit" for convergePlates, while still locked — the barrier keeps anyone
-    // from getting closer than 0.5 to the exit center (see canOccupy), which is farther out than
-    // isAtExit's 0.35, so that check alone can never be satisfied here. Sized to comfortably
-    // cover the single corridor cell leading into the exit (its center sits 1.0 away) so three
-    // players don't have to cram right up against the barrier in first person to register.
-    private readonly CONVERGE_EXIT_GATHER_RADIUS = 1.2;
     // After the team gathers and the exit unlocks, hold advancing to the next level briefly so
     // the barrier-gone/triangle-green payoff is actually visible for a beat, instead of
     // instantly vanishing into the next level's maze (which happens immediately otherwise,
@@ -823,16 +817,21 @@ export class GameRoom extends Room<GameState> {
         return { dx: 0, dy: 0 };
     }
 
-    // A raw radius around the exit's center can't tell the real entrance corridor apart from
-    // some unrelated corridor that happens to run alongside the exit cell's other (walled-off)
-    // sides - those are just as close in world distance despite being a whole maze journey
-    // away. Projecting onto the approach direction rules those out: only positions actually
-    // offset toward the door pass, not ones beside or behind it.
-    private isOnExitApproachSide(player: Player): boolean {
+    // A raw radius (or even a radius plus "is this the correct side" direction check) around
+    // the exit's center can't reliably tell the real entrance corridor apart from some
+    // unrelated, disconnected part of the maze that happens to sit at a similar distance and
+    // rough direction - a dot-product check alone only rules out being directly behind/beside
+    // the door, not diagonally off in a totally different branch of the maze that still
+    // happens to project onto the right side. Checking the actual grid cell identity instead
+    // is topologically exact: the exit is a dead end, so there is exactly one cell that's ever
+    // truly "in front of the door" - the one neighbor connected through its one opening.
+    private isInExitApproachCell(player: Player): boolean {
         const { dx, dy } = this.getExitApproachDirection();
-        if (dx === 0 && dy === 0) return true; // no recorded opening (shouldn't happen) - don't block
-        const dot = (player.x - this.state.exitX) * dx + (player.y - this.state.exitY) * dy;
-        return dot > 0.5;
+        const playerCellX = Math.round(player.x);
+        const playerCellY = Math.round(player.y);
+        const inExitCell = playerCellX === this.state.exitX && playerCellY === this.state.exitY;
+        const inApproachCell = playerCellX === this.state.exitX + dx && playerCellY === this.state.exitY + dy;
+        return inExitCell || inApproachCell;
     }
 
     private checkExitAdvance() {
@@ -850,19 +849,13 @@ export class GameRoom extends Room<GameState> {
                 }
 
                 // all 3 plates locked in - now gate on the team actually gathering at the
-                // door (using CONVERGE_EXIT_GATHER_RADIUS, not isAtExit's 0.35, since the
-                // barrier is still up and physically blocks anyone from getting that close).
-                // Also requires actually being on the entrance side (see
-                // isOnExitApproachSide) - raw distance alone can't rule out an unrelated
-                // corridor that happens to run alongside the exit cell's other walled-off
-                // sides, which would otherwise count as "gathered" without the real journey.
+                // door. Uses exact cell identity (isInExitApproachCell), not a raw radius -
+                // the barrier is still up and physically blocks anyone from getting within
+                // the exit cell itself, so in practice this means "standing in the one
+                // corridor cell that's actually connected to the exit."
                 const players = Array.from(this.state.players.values());
                 if (players.length === 0) return;
-                this.state.playersAtExit = players.filter(
-                    (p) =>
-                        Math.hypot(p.x - this.state.exitX, p.y - this.state.exitY) < this.CONVERGE_EXIT_GATHER_RADIUS &&
-                        this.isOnExitApproachSide(p),
-                ).length;
+                this.state.playersAtExit = players.filter((p) => this.isInExitApproachCell(p)).length;
                 if (this.state.playersAtExit >= players.length) {
                     this.state.exitUnlocked = true;
                     this.convergePlatesUnlockedAt = Date.now();
