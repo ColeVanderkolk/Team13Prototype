@@ -8,7 +8,7 @@ import { GltfModel } from './MazeModels';
 const PLATE_MODEL_URL = (import.meta.env.VITE_PRESSURE_PLATE_MODEL_URL || "").trim();
 
 const CELL_SIZE = 1.8;
-const PLATE_DETECT_RADIUS = 0.22; // how close a player has to be before the plate counts as activated
+const PLATE_DETECT_RADIUS = 0.38; // how close a player has to be before the plate counts as activated
 
 // plate colors match the player color order (sorted by sessionId alphabetically)
 const PLATE_COLORS = ["#38f8b6", "#ff5a7a", "#facc15"]; // teal, red, yellow
