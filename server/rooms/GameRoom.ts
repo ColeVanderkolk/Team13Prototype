@@ -78,7 +78,7 @@ export class GameRoom extends Room<GameState> {
     private gameStartTime: number = 0;
     private lastAcceptedAt = new Map<string, number>();
     private countdownTimer: ReturnType<typeof setInterval> | null = null;
-    private readonly PLATE_RADIUS = 0.2;
+    private readonly PLATE_RADIUS = 0.38;
     // After the team gathers and the exit unlocks, hold advancing to the next level briefly so
     // the barrier-gone/triangle-green payoff is actually visible for a beat, instead of
     // instantly vanishing into the next level's maze (which happens immediately otherwise,
